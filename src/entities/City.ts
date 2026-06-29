@@ -1,5 +1,5 @@
 // src/entities/City.ts
-// 責務: 都市エンティティの生成ファクトリを提供する。
+// 責務: 都市エンティティの生成ファクトリ（第2便で pendingChildren を追加）。
 
 import { nextEntityId } from '../domain/ids';
 import type { CityData, Vec2, QuestData } from '../domain/types';
@@ -38,5 +38,6 @@ export function createCity(position: Vec2, index: number, rng: Rng): CityData {
     residentIds: new Set(),
     quests: rollQuests(rng),
     events: [],
+    pendingChildren: [],
   };
 }

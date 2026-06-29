@@ -4,19 +4,19 @@
 export const WORLD = {
   WIDTH: 8000,
   HEIGHT: 8000,
-  EDGE_MARGIN: 400,
+  EDGE_MARGIN: 200,
 } as const;
 
 export const COUNTS = {
   CITIES: 20,
-  SUPPLY_POSTS: 100,
-  NPCS: 100,
-  MONSTER_MIN: 500,
+  SUPPLY_POSTS: 200,
+  NPCS: 500,
+  MONSTER_MIN: 200,
   MONSTER_MAX: 1000,
 } as const;
 
 export const GRID = {
-  CELL_SIZE: 256,
+  CELL_SIZE: 255,
 } as const;
 
 export const CAMERA = {

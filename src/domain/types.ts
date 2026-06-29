@@ -1,5 +1,5 @@
 // src/domain/types.ts
-// 責務: ゲームドメインの基本データ構造（座標・能力値・スキル・履歴・ログ）を定義する。
+// 責務: ゲームドメインの基本データ構造を定義する（第2便で AI/感情/夜盗/交配/砦を追加）。
 
 import type { EntityId } from './ids';
 import type {
@@ -10,6 +10,8 @@ import type {
   EventCategory,
   EffectKind,
   AgentGoal,
+  ActionType,
+  Allegiance,
 } from './enums';
 
 export interface Vec2 {
@@ -30,12 +32,12 @@ export interface Attributes {
   mp: number;
   maxMp: number;
   health: number;
-  build: number; // 体格
-  agility: number; // 瞬発力
-  reaction: number; // 反応
-  perception: number; // 知覚
-  dexterity: number; // 巧緻性
-  magic: number; // 魔法力
+  build: number;
+  agility: number;
+  reaction: number;
+  perception: number;
+  dexterity: number;
+  magic: number;
 }
 
 export interface Skills {
@@ -51,16 +53,16 @@ export interface Skills {
 export interface Inventory {
   weapon: WeaponType;
   food: number;
-  valuables: number; // 値打ちもの個数
+  valuables: number;
   gold: number;
 }
 
 export interface Desires {
-  basic: number; // 三大欲求
-  money: number; // 金銭欲
-  honor: number; // 名誉欲
-  growth: number; // 成長意欲
-  skillLearning: number; // スキル習得欲
+  basic: number;
+  money: number;
+  honor: number;
+  growth: number;
+  skillLearning: number;
 }
 
 export interface HistoryEntry {
@@ -68,13 +70,20 @@ export interface HistoryEntry {
   text: string;
 }
 
+export interface PlanStep {
+  action: ActionType;
+  targetId: EntityId | null;
+  targetPos: Vec2 | null;
+}
+
 export interface CharacterData {
   id: EntityId;
   kind: CharacterKind;
   familyName: string;
   givenName: string;
-  epithet: string; // 通り名
+  epithet: string;
   personality: Personality;
+  allegiance: Allegiance;
   attr: Attributes;
   skills: Skills;
   inventory: Inventory;
@@ -83,13 +92,19 @@ export interface CharacterData {
   velocity: Vec2;
   goal: AgentGoal;
   goalTarget: Vec2 | null;
+  plan: PlanStep[];
+  planTimer: number;
+  attackCooldown: number;
+  combatTargetId: EntityId | null;
   state: LifeState;
-  deadTimer: number; // 死亡後グレースケール残り秒
-  idleTimer: number; // 無行動禁止カウンタ
+  deadTimer: number;
+  idleTimer: number;
   homeCityId: EntityId | null;
-  attachment: number; // 都市帰属度 0..1
-  tint: number; // 個体色
-  animPhase: number; // アニメ位相
+  fortId: EntityId | null;
+  attachment: number;
+  tint: number;
+  animPhase: number;
+  breedingCooldownDays: number;
   history: HistoryEntry[];
 }
 
@@ -107,12 +122,27 @@ export interface CityData {
   residentIds: Set<EntityId>;
   quests: QuestData[];
   events: HistoryEntry[];
+  pendingChildren: PendingChild[];
+}
+
+export interface PendingChild {
+  parentAId: EntityId;
+  parentBId: EntityId;
+  birth: GameDate;
+  matureYear: number;
+  tint: number;
 }
 
 export interface SupplyPostData {
   id: EntityId;
   name: string;
   position: Vec2;
+}
+
+export interface FortData {
+  id: EntityId;
+  position: Vec2;
+  banditIds: Set<EntityId>;
 }
 
 export interface RoadSegment {

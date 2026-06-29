@@ -1,9 +1,9 @@
 // src/entities/Character.ts
-// 責務: キャラクター（NPC/モンスター/ボス）の生成ファクトリと能力値導出を担う。
+// 責務: キャラクター生成ファクトリと能力値導出（第2便で allegiance/plan/砦/交配フィールドを追加）。
 
 import { nextEntityId } from '../domain/ids';
 import type { EntityId } from '../domain/ids';
-import { CharacterKind, Personality, WeaponType, LifeState, AgentGoal } from '../domain/enums';
+import { CharacterKind, Personality, WeaponType, LifeState, AgentGoal, Allegiance } from '../domain/enums';
 import type { CharacterData, Vec2, Attributes, Skills, Inventory, Desires } from '../domain/types';
 import { STATS } from '../config/constants';
 import { Rng } from '../util/rng';
@@ -85,7 +85,8 @@ function rollDesires(rng: Rng): Desires {
   };
 }
 
-function buildEpithet(personality: Personality): string {
+function buildEpithet(personality: Personality, allegiance: Allegiance): string {
+  if (allegiance === Allegiance.Bandit) return '夜盗の';
   switch (personality) {
     case Personality.Brave:
       return '勇敢なる';
@@ -123,13 +124,15 @@ export function createCharacter(params: CreateCharacterParams): CharacterData {
   const isNpc = kind === CharacterKind.NPC;
   const familyName = isNpc ? rng.pick(FAMILY_NAMES) : rng.pick(MONSTER_NAMES);
   const givenName = isNpc ? rng.pick(GIVEN_NAMES) : rng.pick(MONSTER_NAMES);
+  const allegiance = isNpc ? Allegiance.Citizen : Allegiance.Wild;
   return {
     id: nextEntityId(),
     kind,
     familyName,
     givenName,
-    epithet: buildEpithet(personality),
+    epithet: buildEpithet(personality, allegiance),
     personality,
+    allegiance,
     attr,
     skills: rollSkills(rng),
     inventory: rollInventory(rng),
@@ -138,17 +141,43 @@ export function createCharacter(params: CreateCharacterParams): CharacterData {
     velocity: { x: 0, y: 0 },
     goal: AgentGoal.Idle,
     goalTarget: null,
+    plan: [],
+    planTimer: 0,
+    attackCooldown: 0,
+    combatTargetId: null,
     state: LifeState.Alive,
     deadTimer: 0,
     idleTimer: 0,
     homeCityId,
+    fortId: null,
     attachment: rng.range(0, 1),
     tint,
     animPhase: rng.range(0, Math.PI * 2),
+    breedingCooldownDays: 0,
     history: [],
   };
 }
 
 export function characterDisplayName(c: CharacterData): string {
   return `(${c.epithet})${c.familyName}・${c.givenName}`;
+}
+
+export function refreshEpithet(c: CharacterData): void {
+  c.epithet = buildEpithet(c.personality, c.allegiance);
+}
+
+export function createChildCharacter(
+  rng: Rng,
+  position: Vec2,
+  tint: number,
+  homeCityId: EntityId | null,
+): CharacterData {
+  const c = createCharacter({
+    kind: CharacterKind.NPC,
+    position,
+    rng,
+    tint,
+    homeCityId,
+  });
+  return c;
 }
