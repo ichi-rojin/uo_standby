@@ -1,60 +1,59 @@
-// src/ui/TimeControlPanel.ts
-// 責務: 日時表示と時間停止／再生／2倍速ボタンを提供する。
+// 責務: 時間ヘッダ(Y年m月d日 H時)表示と、停止/再生/2倍速ボタン。
 
-import { applyStyle, basePanelStyle } from './uiStyles';
-import { SPEED } from '../config/constants';
-
-export type SpeedChangeHandler = (speed: number) => void;
+import { GameClock, TimeScale } from '../core/GameClock';
 
 export class TimeControlPanel {
-  private readonly dateLabel: HTMLDivElement;
+  readonly root: HTMLDivElement;
+  private readonly headerSpan: HTMLSpanElement;
 
-  constructor(parent: HTMLElement, onSpeedChange: SpeedChangeHandler) {
-    const root = document.createElement('div');
-    applyStyle(root, basePanelStyle());
-    applyStyle(root, {
-      left: '10px',
-      top: '10px',
-      padding: '8px 10px',
+  constructor(private readonly clock: GameClock) {
+    this.root = document.createElement('div');
+    Object.assign(this.root.style, {
+      position: 'absolute',
+      top: '8px',
+      left: '8px',
       display: 'flex',
-      flexDirection: 'column',
-      gap: '6px',
-      minWidth: '240px',
-    });
-
-    this.dateLabel = document.createElement('div');
-    applyStyle(this.dateLabel, { fontWeight: 'bold', fontSize: '15px' });
-    this.dateLabel.textContent = '---';
-    root.appendChild(this.dateLabel);
-
-    const btnRow = document.createElement('div');
-    applyStyle(btnRow, { display: 'flex', gap: '6px' });
-
-    btnRow.appendChild(this.makeButton('⏸ 停止', () => onSpeedChange(SPEED.PAUSED)));
-    btnRow.appendChild(this.makeButton('▶ 再生', () => onSpeedChange(SPEED.NORMAL)));
-    btnRow.appendChild(this.makeButton('⏩ 2倍', () => onSpeedChange(SPEED.FAST)));
-
-    root.appendChild(btnRow);
-    parent.appendChild(root);
-  }
-
-  private makeButton(label: string, handler: () => void): HTMLButtonElement {
-    const btn = document.createElement('button');
-    btn.textContent = label;
-    applyStyle(btn, {
-      background: '#2a3550',
-      color: '#fff',
-      border: '1px solid #4a5a7a',
-      borderRadius: '4px',
-      padding: '4px 8px',
-      cursor: 'pointer',
+      alignItems: 'center',
+      gap: '8px',
+      background: 'rgba(10,10,16,0.85)',
+      border: '1px solid #444',
+      borderRadius: '6px',
+      padding: '6px 10px',
+      zIndex: '600',
       fontSize: '13px',
     });
-    btn.addEventListener('click', handler);
+
+    this.headerSpan = document.createElement('span');
+    this.headerSpan.style.minWidth = '180px';
+    this.headerSpan.style.fontWeight = 'bold';
+    this.root.appendChild(this.headerSpan);
+
+    this.root.appendChild(this.makeButton('⏸ 停止', 0));
+    this.root.appendChild(this.makeButton('▶ 再生', 1));
+    this.root.appendChild(this.makeButton('⏩ 2倍速', 2));
+  }
+
+  private makeButton(label: string, scale: TimeScale): HTMLButtonElement {
+    const btn = document.createElement('button');
+    btn.textContent = label;
+    Object.assign(btn.style, {
+      cursor: 'pointer',
+      background: '#334',
+      color: '#fff',
+      border: '1px solid #556',
+      borderRadius: '4px',
+      padding: '4px 8px',
+      fontSize: '12px',
+    });
+    btn.addEventListener('click', () => this.clock.setScale(scale));
     return btn;
   }
 
-  setDateText(text: string): void {
-    this.dateLabel.textContent = text;
+  mount(parent: HTMLElement): void {
+    parent.appendChild(this.root);
+  }
+
+  update(): void {
+    this.headerSpan.textContent = this.clock.formatHeader();
   }
 }

@@ -1,61 +1,135 @@
-// src/render/Camera.ts
-// 責務: ワールド座標→スクリーン座標変換のためのカメラ（中心位置・ズーム）を保持し、入力で操作する。
+// 責務: ワールド→画面変換、ズーム/パン、入力(ホイール/WASD/Ctrl+ドラッグ)処理。
 
-import { CAMERA, WORLD } from '../config/constants';
-import { clamp } from '../util/math';
-import type { Vec2 } from '../domain/types';
+import { Container } from 'pixi.js';
+import { CAMERA, WORLD } from '../config/GameConfig';
 
 export class Camera {
-  centerX: number;
-  centerY: number;
+  /** ワールド座標(画面中心が指すワールド点) */
+  x: number;
+  y: number;
   zoom: number;
-  private viewWidth: number;
-  private viewHeight: number;
 
-  constructor(viewWidth: number, viewHeight: number) {
-    this.centerX = WORLD.WIDTH / 2;
-    this.centerY = WORLD.HEIGHT / 2;
+  private readonly worldLayer: Container;
+  private screenWidth = 0;
+  private screenHeight = 0;
+
+  private keys: Set<string> = new Set();
+  private dragging = false;
+  private lastPointerX = 0;
+  private lastPointerY = 0;
+  /** ユーザー操作があったフレーム判定(追従解除用) */
+  private userMoved = false;
+
+  constructor(worldLayer: Container) {
+    this.worldLayer = worldLayer;
+    this.x = (WORLD.WIDTH_TILES * WORLD.TILE_SIZE) / 2;
+    this.y = (WORLD.HEIGHT_TILES * WORLD.TILE_SIZE) / 2;
     this.zoom = CAMERA.DEFAULT_ZOOM;
-    this.viewWidth = viewWidth;
-    this.viewHeight = viewHeight;
   }
 
-  setViewSize(w: number, h: number): void {
-    this.viewWidth = w;
-    this.viewHeight = h;
+  resize(w: number, h: number): void {
+    this.screenWidth = w;
+    this.screenHeight = h;
   }
 
-  pan(dxWorld: number, dyWorld: number): void {
-    this.centerX = clamp(this.centerX + dxWorld, 0, WORLD.WIDTH);
-    this.centerY = clamp(this.centerY + dyWorld, 0, WORLD.HEIGHT);
+  attachInput(canvas: HTMLCanvasElement): void {
+    window.addEventListener('keydown', (e) => {
+      this.keys.add(e.key.toLowerCase());
+    });
+    window.addEventListener('keyup', (e) => {
+      this.keys.delete(e.key.toLowerCase());
+    });
+
+    canvas.addEventListener(
+      'wheel',
+      (e) => {
+        e.preventDefault();
+        const factor =
+          e.deltaY < 0 ? CAMERA.ZOOM_STEP : 1 / CAMERA.ZOOM_STEP;
+        this.zoom = this.clampZoom(this.zoom * factor);
+        this.userMoved = true;
+      },
+      { passive: false }
+    );
+
+    canvas.addEventListener('pointerdown', (e) => {
+      if (e.ctrlKey) {
+        this.dragging = true;
+        this.lastPointerX = e.clientX;
+        this.lastPointerY = e.clientY;
+      }
+    });
+    window.addEventListener('pointermove', (e) => {
+      if (this.dragging) {
+        const dx = e.clientX - this.lastPointerX;
+        const dy = e.clientY - this.lastPointerY;
+        this.lastPointerX = e.clientX;
+        this.lastPointerY = e.clientY;
+        this.x -= dx / this.zoom;
+        this.y -= dy / this.zoom;
+        this.userMoved = true;
+      }
+    });
+    window.addEventListener('pointerup', () => {
+      this.dragging = false;
+    });
   }
 
-  zoomAt(screenX: number, screenY: number, factor: number): void {
-    const before = this.screenToWorld(screenX, screenY);
-    this.zoom = clamp(this.zoom * factor, CAMERA.MIN_ZOOM, CAMERA.MAX_ZOOM);
-    const after = this.screenToWorld(screenX, screenY);
-    this.centerX += before.x - after.x;
-    this.centerY += before.y - after.y;
-    this.centerX = clamp(this.centerX, 0, WORLD.WIDTH);
-    this.centerY = clamp(this.centerY, 0, WORLD.HEIGHT);
+  /** 実時間dt(秒)でWASDパンを処理 */
+  update(realDt: number): void {
+    let mvx = 0;
+    let mvy = 0;
+    if (this.keys.has('w')) {
+      mvy -= 1;
+    }
+    if (this.keys.has('s')) {
+      mvy += 1;
+    }
+    if (this.keys.has('a')) {
+      mvx -= 1;
+    }
+    if (this.keys.has('d')) {
+      mvx += 1;
+    }
+    if (mvx !== 0 || mvy !== 0) {
+      const len = Math.hypot(mvx, mvy);
+      this.x += (mvx / len) * CAMERA.PAN_SPEED * realDt;
+      this.y += (mvy / len) * CAMERA.PAN_SPEED * realDt;
+      this.userMoved = true;
+    }
+    this.applyTransform();
   }
 
-  worldToScreen(world: Vec2): Vec2 {
+  /** カメラを指定ワールド座標へ移動 */
+  centerOn(x: number, y: number): void {
+    this.x = x;
+    this.y = y;
+  }
+
+  /** ユーザー操作があったか確認しフラグをリセット */
+  consumeUserMoved(): boolean {
+    const v = this.userMoved;
+    this.userMoved = false;
+    return v;
+  }
+
+  /** スクリーン座標→ワールド座標 */
+  screenToWorld(sx: number, sy: number): { x: number; y: number } {
     return {
-      x: (world.x - this.centerX) * this.zoom + this.viewWidth / 2,
-      y: (world.y - this.centerY) * this.zoom + this.viewHeight / 2,
+      x: (sx - this.screenWidth / 2) / this.zoom + this.x,
+      y: (sy - this.screenHeight / 2) / this.zoom + this.y,
     };
   }
 
-  screenToWorld(sx: number, sy: number): Vec2 {
-    return {
-      x: (sx - this.viewWidth / 2) / this.zoom + this.centerX,
-      y: (sy - this.viewHeight / 2) / this.zoom + this.centerY,
-    };
+  private applyTransform(): void {
+    this.worldLayer.scale.set(this.zoom);
+    this.worldLayer.position.set(
+      this.screenWidth / 2 - this.x * this.zoom,
+      this.screenHeight / 2 - this.y * this.zoom
+    );
   }
 
-  focusOn(world: Vec2): void {
-    this.centerX = clamp(world.x, 0, WORLD.WIDTH);
-    this.centerY = clamp(world.y, 0, WORLD.HEIGHT);
+  private clampZoom(z: number): number {
+    return Math.min(CAMERA.MAX_ZOOM, Math.max(CAMERA.MIN_ZOOM, z));
   }
 }

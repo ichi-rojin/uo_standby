@@ -1,27 +1,22 @@
-// src/systems/DeathSystem.ts
-// 責務: 死亡キャラクターのグレースケール表示タイマー管理と一定時間経過後の除去を担う。
+// 責務: 死亡キャラのグレースケール表示時間経過後の除去判定。
 
-import { WorldState } from '../world/WorldState';
-import { LifeState } from '../domain/enums';
-import type { EntityId } from '../domain/ids';
+import { DEATH } from '../config/GameConfig';
+import { World } from '../world/World';
 
 export class DeathSystem {
-  update(world: WorldState, dt: number): void {
-    const toRemove: EntityId[] = [];
-    for (const c of world.characters.values()) {
-      if (c.state !== LifeState.Dead) continue;
-      c.deadTimer -= dt;
-      if (c.deadTimer <= 0) {
-        toRemove.push(c.id);
+  /** @returns 除去されたキャラクターIDの配列 */
+  update(world: World, totalMinutes: number): number[] {
+    const removed: number[] = [];
+    for (let i = world.characters.length - 1; i >= 0; i--) {
+      const c = world.characters[i];
+      if (c.alive) {
+        continue;
+      }
+      if (totalMinutes - c.deathMinute >= DEATH.GRAYSCALE_MINUTES) {
+        removed.push(c.id);
+        world.characters.splice(i, 1);
       }
     }
-    for (const id of toRemove) {
-      const c = world.characters.get(id);
-      if (c && c.homeCityId !== null) {
-        const city = world.cities.find((x) => x.id === c.homeCityId);
-        if (city) city.residentIds.delete(id);
-      }
-      world.removeCharacter(id);
-    }
+    return removed;
   }
 }

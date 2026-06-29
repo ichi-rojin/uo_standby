@@ -1,107 +1,117 @@
-// src/ui/DraggableWindow.ts
-// 責務: ドラッグ移動可能・×ボタンで閉じる別窓UI。×ボタンはスクロールから独立して不動。
-
-import { applyStyle, basePanelStyle, UI_COLORS } from './uiStyles';
+// 責務: ドラッグ移動可能・×ボタンで閉じる別窓ウインドウの基底。
+// ×ボタンはスクロールから独立して不動(ヘッダ固定/本文のみスクロール)。
 
 export class DraggableWindow {
   readonly root: HTMLDivElement;
-  private readonly body: HTMLDivElement;
+  private readonly header: HTMLDivElement;
+  protected readonly body: HTMLDivElement;
   private dragging = false;
   private offsetX = 0;
   private offsetY = 0;
+  private onClose: (() => void) | null = null;
 
-  constructor(title: string, parent: HTMLElement, x: number, y: number, width: number) {
+  constructor(title: string, width: number, height: number) {
     this.root = document.createElement('div');
-    applyStyle(this.root, basePanelStyle());
-    applyStyle(this.root, {
-      left: `${x}px`,
-      top: `${y}px`,
+    Object.assign(this.root.style, {
+      position: 'absolute',
+      left: '120px',
+      top: '120px',
       width: `${width}px`,
-      maxHeight: '70vh',
+      height: `${height}px`,
+      background: 'rgba(20,20,28,0.96)',
+      border: '1px solid #555',
+      borderRadius: '6px',
+      boxShadow: '0 4px 18px rgba(0,0,0,0.6)',
       display: 'flex',
       flexDirection: 'column',
-      overflow: 'visible',
+      zIndex: '1000',
+      color: '#eee',
+      fontSize: '12px',
     });
 
-    const header = document.createElement('div');
-    applyStyle(header, {
-      position: 'relative',
-      padding: '6px 28px 6px 10px',
+    this.header = document.createElement('div');
+    Object.assign(this.header.style, {
       cursor: 'move',
-      background: 'rgba(40,52,78,0.9)',
-      borderTopLeftRadius: '6px',
-      borderTopRightRadius: '6px',
-      fontWeight: 'bold',
+      padding: '6px 8px',
+      background: 'rgba(40,40,60,0.98)',
+      borderBottom: '1px solid #555',
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
       userSelect: 'none',
+      flex: '0 0 auto',
     });
-    header.textContent = title;
+    const titleSpan = document.createElement('span');
+    titleSpan.textContent = title;
+    titleSpan.style.fontWeight = 'bold';
 
-    const closeBtn = document.createElement('div');
+    const closeBtn = document.createElement('button');
     closeBtn.textContent = '×';
-    applyStyle(closeBtn, {
-      position: 'absolute',
-      top: '4px',
-      right: '6px',
-      width: '18px',
-      height: '18px',
-      lineHeight: '18px',
-      textAlign: 'center',
+    Object.assign(closeBtn.style, {
       cursor: 'pointer',
-      color: UI_COLORS.death,
-      fontWeight: 'bold',
+      background: '#822',
+      color: '#fff',
+      border: 'none',
+      borderRadius: '3px',
+      width: '20px',
+      height: '20px',
+      lineHeight: '18px',
+      flex: '0 0 auto',
     });
-    closeBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
-    closeBtn.addEventListener('pointerup', () => this.close());
-    header.appendChild(closeBtn);
+    closeBtn.addEventListener('click', () => this.close());
+
+    this.header.appendChild(titleSpan);
+    this.header.appendChild(closeBtn);
 
     this.body = document.createElement('div');
-    applyStyle(this.body, {
-      padding: '8px 10px',
+    Object.assign(this.body.style, {
+      padding: '8px',
       overflowY: 'auto',
       flex: '1 1 auto',
     });
 
-    this.root.appendChild(header);
+    this.root.appendChild(this.header);
     this.root.appendChild(this.body);
+
+    this.attachDrag();
+  }
+
+  private attachDrag(): void {
+    this.header.addEventListener('pointerdown', (e) => {
+      this.dragging = true;
+      this.offsetX = e.clientX - this.root.offsetLeft;
+      this.offsetY = e.clientY - this.root.offsetTop;
+      this.header.setPointerCapture(e.pointerId);
+    });
+    this.header.addEventListener('pointermove', (e) => {
+      if (this.dragging) {
+        this.root.style.left = `${e.clientX - this.offsetX}px`;
+        this.root.style.top = `${e.clientY - this.offsetY}px`;
+      }
+    });
+    this.header.addEventListener('pointerup', (e) => {
+      this.dragging = false;
+      this.header.releasePointerCapture(e.pointerId);
+    });
+  }
+
+  setOnClose(cb: () => void): void {
+    this.onClose = cb;
+  }
+
+  mount(parent: HTMLElement): void {
     parent.appendChild(this.root);
-
-    header.addEventListener('pointerdown', (e) => this.onDragStart(e));
-    window.addEventListener('pointermove', this.onDragMove);
-    window.addEventListener('pointerup', this.onDragEnd);
-  }
-
-  private onDragStart(e: PointerEvent): void {
-    this.dragging = true;
-    const rect = this.root.getBoundingClientRect();
-    this.offsetX = e.clientX - rect.left;
-    this.offsetY = e.clientY - rect.top;
-  }
-
-  private onDragMove = (e: PointerEvent): void => {
-    if (!this.dragging) return;
-    this.root.style.left = `${e.clientX - this.offsetX}px`;
-    this.root.style.top = `${e.clientY - this.offsetY}px`;
-  };
-
-  private onDragEnd = (): void => {
-    this.dragging = false;
-  };
-
-  setBodyHtml(html: string): void {
-    this.body.innerHTML = html;
-  }
-
-  appendToBody(el: HTMLElement): void {
-    this.body.appendChild(el);
-  }
-
-  clearBody(): void {
-    this.body.innerHTML = '';
   }
 
   close(): void {
-    window.removeEventListener('pointermove', this.onDragMove);
-    window.removeEventListener('pointerup', this.onDragEnd);
+    if (this.onClose) {
+      this.onClose();
+    }
     this.root.remove();
+  }
+
+  setPosition(x: number, y: number): void {
+    this.root.style.left = `${x}px`;
+    this.root.style.top = `${y}px`;
   }
 }

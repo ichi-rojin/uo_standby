@@ -1,43 +1,25 @@
-// src/domain/types.ts
-// 責務: ゲームドメインの基本データ構造を定義する（第2便で AI/感情/夜盗/交配/砦を追加）。
+// 責務: ドメイン全体で共有する型・列挙・インタフェースの定義。
 
-import type { EntityId } from './ids';
-import type {
-  CharacterKind,
-  Personality,
-  WeaponType,
-  LifeState,
-  EventCategory,
-  EffectKind,
-  AgentGoal,
-  ActionType,
-  Allegiance,
-} from './enums';
+export type CharacterKind = 'npc' | 'monster' | 'boss';
 
-export interface Vec2 {
+export type Gender = 'male' | 'female';
+
+export type WeaponType = 'sword' | 'polearm' | 'bow' | 'none';
+
+export type Faction = 'civil' | 'bandit' | 'wild';
+
+export interface Vector2 {
   x: number;
   y: number;
 }
 
-export interface GameDate {
-  year: number;
-  month: number;
-  day: number;
-  hour: number;
-}
-
 export interface Attributes {
-  hp: number;
-  maxHp: number;
-  mp: number;
-  maxMp: number;
-  health: number;
-  build: number;
-  agility: number;
-  reaction: number;
-  perception: number;
-  dexterity: number;
-  magic: number;
+  build: number; // 体格
+  agility: number; // 瞬発力
+  reaction: number; // 反応
+  perception: number; // 知覚
+  dexterity: number; // 巧緻性
+  magicPower: number; // 魔法力
 }
 
 export interface Skills {
@@ -47,131 +29,32 @@ export interface Skills {
   magicAttack: number;
   magicBuff: number;
   magicDebuff: number;
-  mapKnowledge: number;
+  cartography: number; // 地図把握度
 }
 
 export interface Inventory {
   weapon: WeaponType;
   food: number;
-  valuables: number;
+  treasures: number; // 値打ちものの個数
   gold: number;
 }
 
 export interface Desires {
-  basic: number;
-  money: number;
-  honor: number;
-  growth: number;
-  skillLearning: number;
+  basic: number; // 三大欲求
+  money: number; // 金銭欲
+  honor: number; // 名誉欲
+  growth: number; // 成長意欲
+  skill: number; // スキル習得欲
 }
 
 export interface HistoryEntry {
-  date: GameDate;
+  /** 既にprefix("Y年m月d日 H時に")を含んだ完成文 */
   text: string;
 }
 
-export interface PlanStep {
-  action: ActionType;
-  targetId: EntityId | null;
-  targetPos: Vec2 | null;
-}
-
-export interface CharacterData {
-  id: EntityId;
-  kind: CharacterKind;
-  familyName: string;
-  givenName: string;
-  epithet: string;
-  personality: Personality;
-  allegiance: Allegiance;
-  attr: Attributes;
-  skills: Skills;
-  inventory: Inventory;
-  desires: Desires;
-  position: Vec2;
-  velocity: Vec2;
-  goal: AgentGoal;
-  goalTarget: Vec2 | null;
-  plan: PlanStep[];
-  planTimer: number;
-  attackCooldown: number;
-  combatTargetId: EntityId | null;
-  state: LifeState;
-  deadTimer: number;
-  idleTimer: number;
-  homeCityId: EntityId | null;
-  fortId: EntityId | null;
-  attachment: number;
-  tint: number;
-  animPhase: number;
-  breedingCooldownDays: number;
-  history: HistoryEntry[];
-}
-
-export interface QuestData {
-  id: EntityId;
-  title: string;
-  reward: number;
-}
-
-export interface CityData {
-  id: EntityId;
-  name: string;
-  position: Vec2;
-  population: number;
-  residentIds: Set<EntityId>;
-  quests: QuestData[];
-  events: HistoryEntry[];
-  pendingChildren: PendingChild[];
-}
-
-export interface PendingChild {
-  parentAId: EntityId;
-  parentBId: EntityId;
-  birth: GameDate;
-  matureYear: number;
-  tint: number;
-}
-
-export interface SupplyPostData {
-  id: EntityId;
-  name: string;
-  position: Vec2;
-}
-
-export interface FortData {
-  id: EntityId;
-  position: Vec2;
-  banditIds: Set<EntityId>;
-}
-
-export interface RoadSegment {
-  from: Vec2;
-  to: Vec2;
-}
-
-export interface EffectInstance {
-  id: EntityId;
-  kind: EffectKind;
-  position: Vec2;
-  age: number;
-  duration: number;
-  text: string;
-  color: number;
-}
-
-export interface EventLogEntry {
-  id: EntityId;
-  date: GameDate;
-  category: EventCategory;
-  message: string;
-  relatedCharacterIds: EntityId[];
-}
-
-export interface ChatLogEntry {
-  id: EntityId;
-  date: GameDate;
-  speakerId: EntityId;
-  speakerName: string;
-  message: string;
-}
+export type LogColorKey =
+  | 'death'
+  | 'relation'
+  | 'treasure'
+  | 'money'
+  | 'normal';

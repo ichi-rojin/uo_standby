@@ -1,66 +1,67 @@
-// src/systems/RecoverySystem.ts
-// 責務: 都市内での HP/MP/健康度回復・装備食料整備・スキル習得、および野外スタック回復と飢餓処理を担う。
+// 責務: 都市内/野外でのHP・MP・健康度のスタック回復、都市滞在判定。
 
-import { WorldState } from '../world/WorldState';
-import type { CharacterData, CityData } from '../domain/types';
-import { RECOVERY } from '../config/aiConfig';
-import { EventLog } from '../log/EventLog';
-import { EventCategory, LifeState } from '../domain/enums';
-import { Rng } from '../util/rng';
-import { characterDisplayName } from '../entities/Character';
-import { cloneDate } from '../util/time';
-import { clamp } from '../util/math';
+import { RECOVERY, STATS_RANGE, WORLD } from '../config/GameConfig';
+import { Character } from '../domain/Character';
+import { World } from '../world/World';
 
-const SKILL_LEARN_CHANCE = 0.02;
-const SKILL_GAIN = 1;
+const CITY_RADIUS = WORLD.TILE_SIZE * 3;
 
 export class RecoverySystem {
-  constructor(
-    private readonly log: EventLog,
-    private readonly rng: Rng,
-  ) {}
-
-  recoverInCity(world: WorldState, c: CharacterData, city: CityData, dt: number): boolean {
-    c.attr.hp = clamp(c.attr.hp + RECOVERY.CITY_HP_PER_SEC * dt, 0, c.attr.maxHp);
-    c.attr.mp = clamp(c.attr.mp + RECOVERY.CITY_MP_PER_SEC * dt, 0, c.attr.maxMp);
-    c.attr.health = clamp(c.attr.health + RECOVERY.CITY_HEALTH_PER_SEC * dt, 0, 100);
-
-    if (c.inventory.food < 8) {
-      c.inventory.food += 1;
-    }
-    if (c.inventory.gold >= 10 && this.rng.chance(SKILL_LEARN_CHANCE)) {
-      c.inventory.gold -= 10;
-      c.skills.sword += SKILL_GAIN;
-      c.history.push({
-        date: cloneDate(world.date),
-        text: `剣のスキルを習得`,
-      });
-      this.log.pushEvent(
-        world.date,
-        EventCategory.Generic,
-        `${characterDisplayName(c)} が ${city.name} で剣技を磨いた`,
-        [c.id],
-      );
+  update(world: World, gameDtMinutes: number): void {
+    // 都市の滞在集合をクリア
+    for (const city of world.cities) {
+      city.residents.clear();
     }
 
-    if (c.homeCityId !== city.id && c.homeCityId !== null) {
-      c.homeCityId = city.id;
+    for (const c of world.characters) {
+      if (!c.alive) {
+        continue;
+      }
+      const city = this.findCityNear(c, world);
+      if (city) {
+        c.currentCityId = city.id;
+        if (c.kind === 'npc') {
+          city.residents.add(c.id);
+        }
+        this.recoverInCity(c, gameDtMinutes);
+      } else {
+        c.currentCityId = null;
+        this.recoverInField(c, gameDtMinutes);
+      }
     }
-    city.residentIds.add(c.id);
-
-    const fullyRecovered = c.attr.hp >= c.attr.maxHp * 0.95 && c.attr.health >= 90;
-    return fullyRecovered;
   }
 
-  applyFieldRecoveryAndStarvation(world: WorldState): void {
-    for (const c of world.characters.values()) {
-      if (c.state === LifeState.Dead) continue;
-      c.attr.hp = clamp(c.attr.hp + RECOVERY.FIELD_HP_PER_SEC, 0, c.attr.maxHp);
-      c.attr.mp = clamp(c.attr.mp + RECOVERY.FIELD_MP_PER_SEC, 0, c.attr.maxMp);
-      if (c.inventory.food > 0) {
-        c.inventory.food -= RECOVERY.FOOD_PER_DAY;
-      } else {
-        c.attr.health = clamp(c.attr.health - RECOVERY.STARVE_HEALTH_LOSS, 0, 100);
+  private findCityNear(c: Character, world: World) {
+    const r2 = CITY_RADIUS * CITY_RADIUS;
+    for (const city of world.cities) {
+      const dx = city.x - c.x;
+      const dy = city.y - c.y;
+      if (dx * dx + dy * dy <= r2) {
+        return city;
+      }
+    }
+    return null;
+  }
+
+  private recoverInCity(c: Character, dt: number): void {
+    c.hp = Math.min(c.maxHp, c.hp + RECOVERY.CITY_HP_PER_MIN * dt);
+    c.mp = Math.min(c.maxMp, c.mp + RECOVERY.CITY_MP_PER_MIN * dt);
+    c.health = Math.min(
+      STATS_RANGE.HEALTH_MAX,
+      c.health + RECOVERY.CITY_HEALTH_PER_MIN * dt
+    );
+  }
+
+  private recoverInField(c: Character, dt: number): void {
+    c.hp = Math.min(c.maxHp, c.hp + RECOVERY.FIELD_HP_PER_MIN * dt);
+    c.mp = Math.min(c.maxMp, c.mp + RECOVERY.FIELD_MP_PER_MIN * dt);
+    // 食料がなければ健康度を害する
+    if (c.inventory.food <= 0) {
+      c.health = Math.max(0, c.health - 0.02 * dt);
+    } else {
+      c.inventory.food -= 0.005 * dt;
+      if (c.inventory.food < 0) {
+        c.inventory.food = 0;
       }
     }
   }

@@ -1,6 +1,4 @@
-/* .eslintrc.cjs
- * 責務: TypeScript の静的解析ルールを定義する。
- */
+// 責務: ESLint 設定。any 禁止 / 未使用変数禁止などの品質ルールを定義。
 module.exports = {
   root: true,
   env: {
@@ -9,7 +7,7 @@ module.exports = {
   },
   parser: '@typescript-eslint/parser',
   parserOptions: {
-    ecmaVersion: 2020,
+    ecmaVersion: 'latest',
     sourceType: 'module',
   },
   plugins: ['@typescript-eslint'],
@@ -19,8 +17,11 @@ module.exports = {
   ],
   rules: {
     '@typescript-eslint/no-explicit-any': 'error',
-    '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+    '@typescript-eslint/no-unused-vars': [
+      'error',
+      { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+    ],
     'no-unused-vars': 'off',
   },
-  ignorePatterns: ['dist', 'node_modules', '.eslintrc.cjs'],
+  ignorePatterns: ['dist', 'node_modules', '*.cjs'],
 };

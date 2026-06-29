@@ -1,82 +1,82 @@
-// src/systems/MovementSystem.ts
-// 責務: 各キャラクターの簡易ゴール（放浪・都市移動・徘徊）に基づく移動更新と無行動禁止を担う。
+// 責務: キャラクターの移動・徘徊目的地選定・無行動禁止の強制再設定。
 
-import { WorldState } from '../world/WorldState';
-import { Rng } from '../util/rng';
-import { AgentGoal, CharacterKind, LifeState, Personality } from '../domain/enums';
-import type { CharacterData, Vec2 } from '../domain/types';
-import { MOVEMENT, WORLD } from '../config/constants';
-import { distance, normalize, clamp } from '../util/math';
+import { MOVEMENT, RECOVERY, WORLD } from '../config/GameConfig';
+import { Character } from '../domain/Character';
+import { Rng } from '../core/Rng';
+import { World } from '../world/World';
 
-function pickWanderTarget(c: CharacterData, rng: Rng): Vec2 {
-  const range = c.kind === CharacterKind.NPC ? 1200 : 600;
-  return {
-    x: clamp(c.position.x + rng.range(-range, range), WORLD.EDGE_MARGIN, WORLD.WIDTH - WORLD.EDGE_MARGIN),
-    y: clamp(c.position.y + rng.range(-range, range), WORLD.EDGE_MARGIN, WORLD.HEIGHT - WORLD.EDGE_MARGIN),
-  };
-}
+export class MovementSystem {
+  constructor(private readonly rng: Rng) {}
 
-function decideGoal(world: WorldState, c: CharacterData, rng: Rng): void {
-  if (c.kind === CharacterKind.NPC) {
-    const wantsCity = c.attachment > 0.5 || c.personality === Personality.Homebound;
-    if (wantsCity && c.homeCityId !== null && rng.chance(0.5)) {
-      const city = world.cities.find((x) => x.id === c.homeCityId);
-      if (city) {
-        c.goal = AgentGoal.TravelToCity;
-        c.goalTarget = { x: city.position.x, y: city.position.y };
+  /** gameDtMinutes: このフレームで進んだゲーム内分 */
+  update(world: World, gameDtMinutes: number): void {
+    const gameDtSeconds = gameDtMinutes * 60;
+    for (const c of world.characters) {
+      if (!c.alive) {
+        continue;
+      }
+      this.stepCharacter(c, world, gameDtMinutes, gameDtSeconds);
+    }
+  }
+
+  private stepCharacter(
+    c: Character,
+    world: World,
+    dtMin: number,
+    dtSec: number
+  ): void {
+    c.wanderTimer -= dtMin;
+    c.idleMinutes += dtMin;
+
+    const dx = c.targetX - c.x;
+    const dy = c.targetY - c.y;
+    const dist = Math.hypot(dx, dy);
+
+    if (dist <= MOVEMENT.ARRIVE_DIST || c.wanderTimer <= 0) {
+      this.pickDestination(c, world);
+      c.wanderTimer = MOVEMENT.WANDER_REPICK_MINUTES;
+    }
+
+    if (c.idleMinutes >= RECOVERY.IDLE_LIMIT_MINUTES) {
+      // 無行動禁止: 強制的に新目的地
+      this.pickDestination(c, world);
+      c.idleMinutes = 0;
+    }
+
+    if (dist > MOVEMENT.ARRIVE_DIST) {
+      const step = c.speed * dtSec;
+      const nx = (dx / dist) * step;
+      const ny = (dy / dist) * step;
+      c.x = this.clampWorld(c.x + nx, WORLD.WIDTH_TILES);
+      c.y = this.clampWorld(c.y + ny, WORLD.HEIGHT_TILES);
+      c.idleMinutes = 0;
+    }
+  }
+
+  private pickDestination(c: Character, world: World): void {
+    if (c.kind === 'npc') {
+      // 帰属度が高いほど都市付近を目的地にする
+      if (this.rng.next() < c.cityAttachment && world.cities.length > 0) {
+        const city = this.rng.pick(world.cities);
+        c.targetX = city.x + this.rng.range(-WORLD.TILE_SIZE * 2, WORLD.TILE_SIZE * 2);
+        c.targetY = city.y + this.rng.range(-WORLD.TILE_SIZE * 2, WORLD.TILE_SIZE * 2);
         return;
       }
     }
-    c.goal = AgentGoal.Wander;
-    c.goalTarget = pickWanderTarget(c, rng);
-    return;
+    const range = WORLD.TILE_SIZE * 30;
+    c.targetX = this.clampWorld(
+      c.x + this.rng.range(-range, range),
+      WORLD.WIDTH_TILES
+    );
+    c.targetY = this.clampWorld(
+      c.y + this.rng.range(-range, range),
+      WORLD.HEIGHT_TILES
+    );
   }
-  c.goal = AgentGoal.Wander;
-  c.goalTarget = pickWanderTarget(c, rng);
-}
 
-function speedOf(c: CharacterData): number {
-  const base = c.kind === CharacterKind.NPC ? MOVEMENT.NPC_BASE_SPEED : MOVEMENT.MONSTER_BASE_SPEED;
-  const agilityFactor = 0.7 + (c.attr.agility / 30) * 0.6;
-  return base * agilityFactor;
-}
-
-export class MovementSystem {
-  update(world: WorldState, rng: Rng, dt: number): void {
-    for (const c of world.characters.values()) {
-      if (c.state === LifeState.Dead) continue;
-      c.animPhase += dt * 4;
-
-      if (c.goalTarget === null || c.goal === AgentGoal.Idle) {
-        c.idleTimer += dt;
-        if (c.idleTimer >= MOVEMENT.IDLE_MAX_SECONDS || c.goalTarget === null) {
-          decideGoal(world, c, rng);
-          c.idleTimer = 0;
-        }
-      }
-
-      if (c.goalTarget === null) continue;
-      const dist = distance(c.position, c.goalTarget);
-      if (dist <= MOVEMENT.ARRIVE_RADIUS) {
-        c.goal = AgentGoal.Idle;
-        c.goalTarget = null;
-        c.velocity.x = 0;
-        c.velocity.y = 0;
-        continue;
-      }
-      const dir = normalize({
-        x: c.goalTarget.x - c.position.x,
-        y: c.goalTarget.y - c.position.y,
-      });
-      const sp = speedOf(c);
-      c.velocity.x = dir.x * sp;
-      c.velocity.y = dir.y * sp;
-      c.position.x += c.velocity.x * dt;
-      c.position.y += c.velocity.y * dt;
-      c.position.x = clamp(c.position.x, WORLD.EDGE_MARGIN, WORLD.WIDTH - WORLD.EDGE_MARGIN);
-      c.position.y = clamp(c.position.y, WORLD.EDGE_MARGIN, WORLD.HEIGHT - WORLD.EDGE_MARGIN);
-      world.grid.update(c.id, c.position);
-      c.idleTimer = 0;
-    }
+  private clampWorld(v: number, tiles: number): number {
+    const min = WORLD.EDGE_MARGIN_TILES * WORLD.TILE_SIZE;
+    const max = (tiles - WORLD.EDGE_MARGIN_TILES) * WORLD.TILE_SIZE;
+    return Math.min(max, Math.max(min, v));
   }
 }

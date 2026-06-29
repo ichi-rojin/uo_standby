@@ -1,162 +1,200 @@
-// src/systems/CombatSystem.ts
-// 責務: ダメージ計算・命中処理・死亡判定・履歴/ログ/エフェクト/感情変化を担う戦闘中核。
+// 責務: 近傍探索による戦闘判定。ダメージ算出・エフェクト発火・ログ/会話生成。
 
-import { WorldState } from '../world/WorldState';
-import type { CharacterData } from '../domain/types';
-import { LifeState, CharacterKind, EventCategory, WeaponType, Allegiance } from '../domain/enums';
-import { COMBAT, RELATION, CHAT } from '../config/aiConfig';
-import { DEATH } from '../config/constants';
-import { Rng } from '../util/rng';
-import { EffectSystem } from './EffectSystem';
-import { EventLog } from '../log/EventLog';
-import { RelationGraph } from '../social/RelationGraph';
-import { characterDisplayName } from '../entities/Character';
-import { combatShout, deathLine } from '../social/ChatGenerator';
-import { cloneDate } from '../util/time';
+import { COMBAT } from '../config/GameConfig';
+import { Character } from '../domain/Character';
+import { effectiveAttack, effectiveDefense } from '../domain/Stats';
+import { Rng } from '../core/Rng';
+import { World } from '../world/World';
+import { EffectLayer } from '../render/EffectLayer';
+import { EventLog } from '../logging/EventLog';
+import { ConversationLog } from '../logging/ConversationLog';
+import { GameClock } from '../core/GameClock';
 
-function weaponSkill(c: CharacterData): number {
-  switch (c.inventory.weapon) {
-    case WeaponType.Sword:
-      return c.skills.sword;
-    case WeaponType.Polearm:
-      return c.skills.polearm;
-    case WeaponType.Bow:
-      return c.skills.bow;
-    default:
-      return 0;
-  }
-}
+const MONSTER_SHOUTS = [
+  'グルァァ！',
+  'シャアアア！',
+  'ギギギ…',
+  'ウォオオン！',
+  'キシャアア！',
+] as const;
 
-function computeDamage(attacker: CharacterData, defender: CharacterData, rng: Rng): number {
-  const power =
-    COMBAT.BASE_DAMAGE +
-    attacker.attr.build * COMBAT.STRENGTH_SCALE +
-    weaponSkill(attacker) * COMBAT.SKILL_SCALE;
-  const defense = defender.attr.reaction * COMBAT.DEFENSE_SCALE;
-  let dmg = Math.max(1, power - defense);
-  if (rng.chance(COMBAT.CRIT_CHANCE)) {
-    dmg *= COMBAT.CRIT_MULT;
-  }
-  dmg *= rng.range(0.85, 1.15);
-  return Math.round(dmg);
+const NPC_BATTLE_CRIES = [
+  '覚悟しろ！',
+  '我が剣を受けよ！',
+  '退けぬ戦いだ！',
+  'ここで仕留める！',
+  '名にかけて！',
+] as const;
+
+export interface CombatDeps {
+  effects: EffectLayer;
+  eventLog: EventLog;
+  conversationLog: ConversationLog;
+  clock: GameClock;
 }
 
 export class CombatSystem {
+  private readonly neighbors: Character[] = [];
+
   constructor(
-    private readonly effects: EffectSystem,
-    private readonly log: EventLog,
-    private readonly relations: RelationGraph,
     private readonly rng: Rng,
+    private readonly deps: CombatDeps
   ) {}
 
-  resolveAttack(world: WorldState, attacker: CharacterData, defender: CharacterData): void {
-    if (attacker.state === LifeState.Dead || defender.state === LifeState.Dead) return;
-    if (attacker.attackCooldown > 0) return;
-    attacker.attackCooldown = COMBAT.ATTACK_COOLDOWN;
-
-    if (this.rng.chance(CHAT.COMBAT_SHOUT_CHANCE)) {
-      this.log.pushChat(
-        world.date,
-        attacker.id,
-        characterDisplayName(attacker),
-        combatShout(this.rng, defender),
-      );
-    }
-
-    const dmg = computeDamage(attacker, defender, this.rng);
-    defender.attr.hp -= dmg;
-    defender.attr.health = Math.max(0, defender.attr.health - COMBAT.HEALTH_LOSS_ON_HIT);
-    this.effects.spawnDamage(world, defender.position, dmg);
-
-    if (defender.attr.hp <= 0) {
-      this.handleDeath(world, attacker, defender);
-    } else {
-      defender.combatTargetId = attacker.id;
-    }
-  }
-
-  private handleDeath(world: WorldState, attacker: CharacterData, victim: CharacterData): void {
-    victim.attr.hp = 0;
-    victim.state = LifeState.Dead;
-    victim.deadTimer = DEATH.GRAYSCALE_SECONDS;
-    victim.combatTargetId = null;
-    victim.plan = [];
-
-    this.log.pushChat(world.date, victim.id, characterDisplayName(victim), deathLine(this.rng));
-
-    const victimName = characterDisplayName(victim);
-    const attackerName = characterDisplayName(attacker);
-    this.log.pushEvent(
-      world.date,
-      EventCategory.Death,
-      `${attackerName} が ${victimName} を討伐した`,
-      [attacker.id, victim.id],
-    );
-
-    attacker.history.push({
-      date: cloneDate(world.date),
-      text: `${victimName} を討伐`,
-    });
-
-    if (victim.kind !== CharacterKind.NPC) {
-      const loot = this.rng.int(5, 30);
-      attacker.inventory.gold += loot;
-      attacker.inventory.food += 1;
-      attacker.history.push({
-        date: cloneDate(world.date),
-        text: `${victimName} を捕食`,
-      });
-    } else {
-      attacker.inventory.gold += victim.inventory.gold;
-      attacker.inventory.valuables += victim.inventory.valuables;
-    }
-
-    this.propagateGrief(world, attacker, victim);
-  }
-
-  private propagateGrief(world: WorldState, killer: CharacterData, victim: CharacterData): void {
-    if (victim.kind !== CharacterKind.NPC || killer.kind !== CharacterKind.NPC) return;
-    const near = world.grid.queryRadius(victim.position, 400);
-    for (const id of near) {
-      if (id === killer.id || id === victim.id) continue;
-      const witness = world.characters.get(id);
-      if (!witness || witness.kind !== CharacterKind.NPC) continue;
-      const bond = this.relations.get(witness.id, victim.id);
-      if (bond > RELATION.FRIEND_THRESHOLD) {
-        this.relations.adjust(witness.id, killer.id, -RELATION.KILL_RELATED_HATE);
-        this.log.pushEvent(
-          world.date,
-          EventCategory.Relation,
-          `${characterDisplayName(witness)} が ${characterDisplayName(killer)} を深く憎んだ`,
-          [witness.id, killer.id],
-        );
+  update(world: World, gameDtMinutes: number): void {
+    for (const c of world.characters) {
+      if (!c.alive) {
+        continue;
+      }
+      if (c.attackCooldown > 0) {
+        c.attackCooldown -= gameDtMinutes;
+        continue;
+      }
+      const target = this.findTarget(c, world);
+      if (target) {
+        this.resolveAttack(c, target, world);
+        c.attackCooldown = COMBAT.ATTACK_COOLDOWN_MINUTES;
       }
     }
   }
 
-  cooldownAll(world: WorldState, dt: number): void {
-    for (const c of world.characters.values()) {
-      if (c.attackCooldown > 0) c.attackCooldown = Math.max(0, c.attackCooldown - dt);
+  private isHostile(a: Character, b: Character): boolean {
+    if (a.id === b.id) {
+      return false;
+    }
+    // モンスター↔NPC、夜盗↔市民 を敵対とする
+    if (a.kind === 'monster' && b.kind !== 'monster') {
+      return true;
+    }
+    if (a.kind !== 'monster' && b.kind === 'monster') {
+      return true;
+    }
+    if (a.faction === 'bandit' && b.faction === 'civil') {
+      return true;
+    }
+    if (a.faction === 'civil' && b.faction === 'bandit') {
+      return true;
+    }
+    return false;
+  }
+
+  private findTarget(c: Character, world: World): Character | null {
+    world.grid.queryRadius(c.x, c.y, COMBAT.AGGRO_RANGE, this.neighbors);
+    let best: Character | null = null;
+    let bestDist = Number.POSITIVE_INFINITY;
+    for (const n of this.neighbors) {
+      if (!n.alive || !this.isHostile(c, n)) {
+        continue;
+      }
+      const d = (n.x - c.x) ** 2 + (n.y - c.y) ** 2;
+      if (d < bestDist) {
+        bestDist = d;
+        best = n;
+      }
+    }
+    if (best) {
+      const realDist = Math.sqrt(bestDist);
+      if (realDist <= COMBAT.ATTACK_RANGE) {
+        return best;
+      }
+      // 範囲外なら接近(目的地を敵に)
+      c.targetX = best.x;
+      c.targetY = best.y;
+    }
+    return realDistInRange(best, c) ? best : null;
+  }
+
+  private resolveAttack(
+    attacker: Character,
+    target: Character,
+    world: World
+  ): void {
+    const atk = effectiveAttack(
+      attacker.attributes,
+      attacker.skills,
+      attacker.health
+    );
+    const def = effectiveDefense(target.attributes, target.health);
+    const raw = (atk - def * 0.5) * COMBAT.DAMAGE_SCALE;
+    const dmg = Math.max(COMBAT.MIN_DAMAGE, Math.round(raw));
+
+    target.hp -= dmg;
+    this.deps.effects.spawnDamageText(target.x, target.y, dmg, false);
+    this.deps.effects.spawnHitFlash(target.x, target.y);
+
+    this.emitBattleCry(attacker);
+
+    if (target.hp <= 0) {
+      this.handleDeath(attacker, target, world);
     }
   }
 
-  banditRob(world: WorldState, robber: CharacterData, victim: CharacterData): void {
-    if (victim.state === LifeState.Dead) return;
-    if (robber.allegiance !== Allegiance.Bandit) return;
-    const amount = Math.round(victim.inventory.gold * 0.5);
-    if (amount <= 0) {
-      this.resolveAttack(world, robber, victim);
+  private emitBattleCry(attacker: Character): void {
+    if (!this.rng.chance(0.08)) {
       return;
     }
-    victim.inventory.gold -= amount;
-    robber.inventory.gold += amount;
-    this.effects.spawnDebuff(world, victim.position);
-    this.log.pushEvent(
-      world.date,
-      EventCategory.Money,
-      `${characterDisplayName(robber)} が ${characterDisplayName(victim)} から ${amount} 金を強奪`,
-      [robber.id, victim.id],
-    );
-    this.relations.adjust(victim.id, robber.id, -RELATION.KILL_RELATED_HATE / 2);
+    if (attacker.kind === 'monster') {
+      this.deps.conversationLog.push(
+        attacker.id,
+        attacker.displayName,
+        this.rng.pick(MONSTER_SHOUTS),
+        [attacker.id]
+      );
+    } else {
+      this.deps.conversationLog.push(
+        attacker.id,
+        attacker.displayName,
+        this.rng.pick(NPC_BATTLE_CRIES),
+        [attacker.id]
+      );
+    }
   }
+
+  private handleDeath(
+    killer: Character,
+    victim: Character,
+    world: World
+  ): void {
+    victim.alive = false;
+    victim.hp = 0;
+    victim.deathMinute = this.deps.clock.getTotalMinutes();
+
+    const prefix = this.deps.clock.formatLogPrefix();
+    this.deps.eventLog.push(
+      `${prefix}、${killer.displayName} が ${victim.displayName} を討伐した`,
+      'death',
+      [killer.id, victim.id]
+    );
+    killer.addHistory({
+      text: `${prefix}${victim.displayName}を討伐`,
+    });
+
+    // 断末魔
+    this.deps.conversationLog.push(
+      victim.id,
+      victim.displayName,
+      victim.kind === 'monster' ? 'ギャアアア…' : '無念…',
+      [victim.id, killer.id]
+    );
+
+    // 値打ちもの/金銭の移譲(簡易)
+    if (victim.inventory.gold > 0) {
+      killer.inventory.gold += victim.inventory.gold;
+      this.deps.eventLog.push(
+        `${prefix}、${killer.displayName} が ${victim.inventory.gold} の金銭を得た`,
+        'money',
+        [killer.id]
+      );
+      victim.inventory.gold = 0;
+    }
+  }
+}
+
+/** 攻撃射程内かを判定(可読性のため関数化) */
+function realDistInRange(target: Character | null, c: Character): boolean {
+  if (!target) {
+    return false;
+  }
+  const d = Math.hypot(target.x - c.x, target.y - c.y);
+  return d <= COMBAT.ATTACK_RANGE;
 }

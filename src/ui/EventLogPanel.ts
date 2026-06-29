@@ -1,131 +1,67 @@
-// src/ui/EventLogPanel.ts
-// 責務: 左下固定の事件・出来事ログと右側スタックの会話ログをDOM描画し、キャラクリックを仲介する。
+// 責務: 事件・出来事ログの左下固定表示。色種別反映・キャラクリックでコールバック。
 
-import { applyStyle, basePanelStyle, UI_COLORS } from './uiStyles';
-import { EventLog } from '../log/EventLog';
-import type { EventLogEntry, ChatLogEntry } from '../domain/types';
-import { EventCategory } from '../domain/enums';
-import type { EntityId } from '../domain/ids';
-import { formatDate } from '../util/time';
-import { LOG } from '../config/constants';
+import { EventLog } from '../logging/EventLog';
+import { LogColorKey } from '../domain/types';
 
-export type LogCharacterClickHandler = (id: EntityId) => void;
-
-function categoryColor(cat: EventCategory): string {
-  switch (cat) {
-    case EventCategory.Death:
-      return UI_COLORS.death;
-    case EventCategory.Relation:
-      return UI_COLORS.relation;
-    case EventCategory.Treasure:
-      return UI_COLORS.treasure;
-    case EventCategory.Money:
-      return UI_COLORS.money;
-    default:
-      return UI_COLORS.generic;
-  }
-}
+const COLOR_MAP: Record<LogColorKey, string> = {
+  death: '#ff5555',
+  relation: '#55dd66',
+  treasure: '#ffcc33',
+  money: '#ffee55',
+  normal: '#dddddd',
+};
 
 export class EventLogPanel {
-  private readonly eventRoot: HTMLDivElement;
-  private readonly chatRoot: HTMLDivElement;
-  private readonly onClick: LogCharacterClickHandler;
+  readonly root: HTMLDivElement;
 
-  constructor(parent: HTMLElement, log: EventLog, onClick: LogCharacterClickHandler) {
-    this.onClick = onClick;
-
-    this.eventRoot = document.createElement('div');
-    applyStyle(this.eventRoot, basePanelStyle());
-    applyStyle(this.eventRoot, {
-      left: '10px',
-      bottom: '10px',
+  constructor(
+    private readonly log: EventLog,
+    private readonly onCharacterClick: (id: number) => void
+  ) {
+    this.root = document.createElement('div');
+    Object.assign(this.root.style, {
+      position: 'absolute',
+      left: '8px',
+      bottom: '8px',
       width: '420px',
       height: '230px',
+      background: 'rgba(10,10,16,0.82)',
+      border: '1px solid #444',
+      borderRadius: '6px',
       overflowY: 'auto',
-      padding: '6px 8px',
+      padding: '6px',
+      fontSize: '11px',
+      lineHeight: '1.45',
+      zIndex: '500',
     });
-    parent.appendChild(this.eventRoot);
-
-    this.chatRoot = document.createElement('div');
-    applyStyle(this.chatRoot, basePanelStyle());
-    applyStyle(this.chatRoot, {
-      right: '10px',
-      top: '10px',
-      width: '320px',
-      maxHeight: '70vh',
-      overflowY: 'auto',
-      padding: '6px 8px',
-    });
-    parent.appendChild(this.chatRoot);
-
-    log.onEvent((e) => this.addEvent(e));
-    log.onChat((c) => this.addChat(c));
   }
 
-  private makeCharacterSpan(id: EntityId, name: string): HTMLSpanElement {
-    const span = document.createElement('span');
-    span.textContent = name;
-    applyStyle(span, {
-      textDecoration: 'underline',
-      cursor: 'pointer',
-      color: '#9fd0ff',
-    });
-    span.addEventListener('click', () => this.onClick(id));
-    return span;
+  mount(parent: HTMLElement): void {
+    parent.appendChild(this.root);
   }
 
-  private addEvent(e: EventLogEntry): void {
-    const line = document.createElement('div');
-    applyStyle(line, {
-      marginBottom: '3px',
-      color: categoryColor(e.category),
-      lineHeight: '1.3',
-    });
-    const prefix = document.createElement('span');
-    prefix.textContent = `${formatDate(e.date)}に `;
-    line.appendChild(prefix);
-    const msg = document.createElement('span');
-    msg.textContent = e.message;
-    line.appendChild(msg);
-    this.eventRoot.insertBefore(line, this.eventRoot.firstChild);
-    while (this.eventRoot.childElementCount > LOG.MAX_EVENT_ENTRIES) {
-      const last = this.eventRoot.lastElementChild;
-      if (last) last.remove();
+  update(): void {
+    if (!this.log.consumeDirty()) {
+      return;
     }
-  }
+    this.root.innerHTML = '';
+    const entries = this.log.getEntries();
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const e = entries[i];
+      const line = document.createElement('div');
+      line.style.color = COLOR_MAP[e.color];
+      line.style.margin = '1px 0';
+      line.textContent = e.text;
 
-  private addChat(c: ChatLogEntry): void {
-    const line = document.createElement('div');
-    applyStyle(line, {
-      marginBottom: '5px',
-      padding: '4px 6px',
-      background: 'rgba(255,255,255,0.04)',
-      borderRadius: '4px',
-      position: 'relative',
-    });
-    const speaker = this.makeCharacterSpan(c.speakerId, c.speakerName);
-    line.appendChild(speaker);
-    const body = document.createElement('div');
-    body.textContent = `「${c.message}」`;
-    applyStyle(body, { color: UI_COLORS.text, marginTop: '2px' });
-    line.appendChild(body);
-
-    const close = document.createElement('span');
-    close.textContent = '×';
-    applyStyle(close, {
-      position: 'absolute',
-      top: '2px',
-      right: '4px',
-      cursor: 'pointer',
-      color: UI_COLORS.death,
-    });
-    close.addEventListener('click', () => line.remove());
-    line.appendChild(close);
-
-    this.chatRoot.insertBefore(line, this.chatRoot.firstChild);
-    while (this.chatRoot.childElementCount > LOG.MAX_CHAT_ENTRIES) {
-      const last = this.chatRoot.lastElementChild;
-      if (last) last.remove();
+      for (const id of e.relatedCharacterIds) {
+        const btn = document.createElement('span');
+        btn.textContent = ` [#${id}]`;
+        btn.style.cursor = 'pointer';
+        btn.style.color = '#88bbff';
+        btn.addEventListener('click', () => this.onCharacterClick(id));
+        line.appendChild(btn);
+      }
+      this.root.appendChild(line);
     }
   }
 }
