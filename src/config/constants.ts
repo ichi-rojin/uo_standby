@@ -129,3 +129,31 @@ export const EMOTION = {
   COMBAT_HELP_BONUS: 8,
   ACCIDENT_PENALTY: -10
 } as const;
+
+// 責務: 第3便で追加するダンジョン・伝説武器・世代継承用定数
+export const DUNGEON = {
+  COUNT: 12,
+  RADIUS: 24,
+  BOSS_RESPAWN_YEARS: 5,
+  TREASURE_PER_DUNGEON: 3,
+  EXPLORE_RANGE: 40,
+  LEGEND_DROP_CHANCE: 1.0
+} as const;
+
+export const HEREDITY = {
+  STAT_VARIANCE: 0.15,
+  MORAL_BLEND: 0.5,
+  WEAPON_INHERIT_CHANCE: 0.6
+} as const;
+
+export const LEGEND = {
+  POWER_BONUS: 60,
+  MAGIC_BONUS: 60,
+  NAMES: ['断罪のエクスカリ', '竜殺ガラティン', '星砕ミョルニア', '永宵ヴァルハ', '黎明ダインスレ']
+} as const;
+
+export const DUNGEON_COLORS = {
+  ENTRANCE: 0x553377,
+  BOSS_ICON: 0x110011,
+  LEGEND_GLOW: 0xffdd55
+} as const;

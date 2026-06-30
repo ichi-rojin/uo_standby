@@ -5,7 +5,7 @@ import type { Simulation } from '../sim/Simulation';
 import type { Character } from '../domain/types';
 import {
   drawRoads, buildCharBody, buildCityIcon, buildVillageIcon, buildFortIcon,
-  buildBars, updateBars, makeLabel, drawEffect
+  buildBars, updateBars, makeLabel, drawEffect, buildDungeonIcon, drawLegendAura
 } from './Sprites';
 
 interface CharView {
@@ -16,6 +16,7 @@ interface CharView {
   mp: Graphics;
   label: Text;
   gray: boolean;
+  aura: Graphics;
 }
 
 export class Renderer {
@@ -24,6 +25,8 @@ export class Renderer {
   private cityLayer = new Container();
   private villageLayer = new Container();
   private fortLayer = new Container();
+  private dungeonLayer = new Container();
+  private fortIcons = new Map<number, Container>();
   private charLayer = new Container();
   private fxLayer = new Container();
   private views = new Map<number, CharView>();
@@ -35,6 +38,7 @@ export class Renderer {
     this.world.addChild(this.roadG);
     this.world.addChild(this.villageLayer);
     this.world.addChild(this.fortLayer);
+    this.world.addChild(this.dungeonLayer);
     this.world.addChild(this.cityLayer);
     this.world.addChild(this.charLayer);
     this.world.addChild(this.fxLayer);
@@ -63,6 +67,16 @@ export class Renderer {
       const icon = buildFortIcon();
       icon.position.set(f.pos.x, f.pos.y);
       this.fortLayer.addChild(icon);
+      this.fortIcons.set(f.id, icon);
+    }
+    for (const d of this.sim.dungeons.dungeons) {
+      const icon = buildDungeonIcon();
+      icon.position.set(d.pos.x, d.pos.y);
+      this.dungeonLayer.addChild(icon);
+      const label = makeLabel(d.name);
+      label.anchor.set(0.5, 0);
+      label.position.set(d.pos.x, d.pos.y + RENDER.FORT_RADIUS + 2);
+      this.dungeonLayer.addChild(label);
     }
   }
 
@@ -75,9 +89,10 @@ export class Renderer {
     const label = makeLabel('');
     label.anchor.set(0.5, 0);
     label.position.set(0, (c.kind === 'npc' ? RENDER.NPC_RADIUS : RENDER.MONSTER_RADIUS) + 2);
-    root.addChild(body, bars.bg, bars.hp, bars.mp, label);
+    const aura = new Graphics();
+    root.addChild(aura, body, bars.bg, bars.hp, bars.mp, label);
     this.charLayer.addChild(root);
-    v = { root, body, bg: bars.bg, hp: bars.hp, mp: bars.mp, label, gray: false };
+    v = { root, body, bg: bars.bg, hp: bars.hp, mp: bars.mp, label, gray: false, aura };
     this.views.set(c.id, v);
     return v;
   }
@@ -90,6 +105,13 @@ export class Renderer {
       v.root.position.set(c.pos.x, c.pos.y);
       const bob = Math.sin(c.animPhase) * (c.alive ? 1.5 : 0);
       v.body.position.set(0, bob);
+      if (c.legendWeaponId >= 0 && c.alive) {
+        const r = c.kind === 'npc' ? RENDER.NPC_RADIUS : RENDER.MONSTER_RADIUS;
+        drawLegendAura(v.aura, c.animPhase, r);
+        v.aura.visible = true;
+      } else {
+        v.aura.visible = false;
+      }
       updateBars(v.hp, v.mp, v.bg, c);
       const stamp = `${c.stats.health < 60 ? '弱' : ''}HP${Math.floor(c.stats.hp)}`;
       v.label.text = c.kind === 'npc'
@@ -114,6 +136,16 @@ export class Renderer {
       if (label) {
         const stay = this.sim.cityStayCount(c.id);
         label.text = `${c.name} 滞在${stay} 人口${c.population}`;
+      }
+    }
+    for (const f of this.sim.world.forts) {
+      const icon = this.fortIcons.get(f.id);
+      if (icon) icon.visible = f.alive;
+      else if (f.alive) {
+        const fresh = buildFortIcon();
+        fresh.position.set(f.pos.x, f.pos.y);
+        this.fortLayer.addChild(fresh);
+        this.fortIcons.set(f.id, fresh);
       }
     }
     this.syncEffects();

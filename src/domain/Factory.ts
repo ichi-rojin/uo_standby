@@ -1,7 +1,7 @@
 // 責務: キャラクター(NPC/モンスター/ボス)生成ロジック
 import { Rng } from '../core/Rng';
 import type { Vec2 } from '../core/Vec2';
-import { STATS, COLORS } from '../config/constants';
+import { STATS, COLORS, HEREDITY } from '../config/constants';
 import type { Character, EntityKind, Gender, WeaponKind } from './types';
 import { genName } from './Names';
 import { computeTitle } from './Titles';
@@ -85,7 +85,10 @@ export function createNpc(
     replanTimer: 0,
     attackCooldown: 0,
     monsterDarkness: 0,
-    animPhase: rng.next() * Math.PI * 2
+    animPhase: rng.next() * Math.PI * 2,
+    legendWeaponId: -1,
+    parentIds: null,
+    generation: 0
   };
   c.title = computeTitle(c);
   return c;
@@ -137,7 +140,10 @@ export function createMonster(rng: Rng, id: number, pos: Vec2, boss = false): Ch
     replanTimer: 0,
     attackCooldown: 0,
     monsterDarkness: darkness,
-    animPhase: rng.next() * Math.PI * 2
+    animPhase: rng.next() * Math.PI * 2,
+    legendWeaponId: -1,
+    parentIds: null,
+    generation: 0
   };
   c.title = computeTitle(c);
   return c;
@@ -153,4 +159,83 @@ export function monsterColor(darkness: number): number {
   const gg = Math.floor(g * f);
   const bb = Math.floor(b * f);
   return (rr << 16) | (gg << 8) | bb;
+}
+
+// 責務: 両親の能力を継承した子NPCを生成
+export function createChildNpc(
+  rng: Rng,
+  id: number,
+  pos: Vec2,
+  homeCityId: number,
+  parentA: Character,
+  parentB: Character
+): Character {
+  const gender: Gender = rng.chance(0.5) ? 'male' : 'female';
+  const name = genName(rng, gender);
+  const blendMoral = Math.round(
+    (parentA.stats.moral + parentB.stats.moral) * HEREDITY.MORAL_BLEND
+  );
+  const inherit = (a: number, b: number): number => {
+    const base = (a + b) / 2;
+    const v = base * (1 + rng.range(-HEREDITY.STAT_VARIANCE, HEREDITY.STAT_VARIANCE));
+    return Math.max(5, Math.round(v));
+  };
+  const power = inherit(parentA.stats.power, parentB.stats.power);
+  const magic = inherit(parentA.stats.magic, parentB.stats.magic);
+  const maxHp = STATS.BASE_HP + inherit(parentA.stats.maxHp - STATS.BASE_HP, parentB.stats.maxHp - STATS.BASE_HP);
+  const maxMp = STATS.BASE_MP + inherit(parentA.stats.maxMp - STATS.BASE_MP, parentB.stats.maxMp - STATS.BASE_MP);
+  const stats = {
+    hp: maxHp,
+    maxHp,
+    mp: maxMp,
+    maxMp,
+    health: STATS.BASE_HEALTH,
+    power,
+    agility: inherit(parentA.stats.agility, parentB.stats.agility),
+    reflex: inherit(parentA.stats.reflex, parentB.stats.reflex),
+    perception: inherit(parentA.stats.perception, parentB.stats.perception),
+    dexterity: inherit(parentA.stats.dexterity, parentB.stats.dexterity),
+    magic,
+    honor: inherit(parentA.stats.honor, parentB.stats.honor),
+    moral: Math.max(-10, Math.min(10, blendMoral))
+  };
+  const evil = stats.moral < -5;
+  const inheritWeapon = rng.chance(HEREDITY.WEAPON_INHERIT_CHANCE);
+  const weapon: WeaponKind = inheritWeapon
+    ? (rng.chance(0.5) ? parentA.inventory.weapon : parentB.inventory.weapon)
+    : (magic > power ? 'magic' : rng.pick(WEAPONS));
+  const c: Character = {
+    id,
+    kind: 'npc',
+    gender,
+    surname: rng.chance(0.5) ? parentA.surname : parentB.surname,
+    givenName: name.givenName,
+    title: '',
+    pos: { x: pos.x, y: pos.y },
+    vel: { x: 0, y: 0 },
+    stats,
+    skills: newSkills(rng),
+    needs: newNeeds(),
+    inventory: { weapon, food: rng.int(3, 10), treasures: 0, gold: rng.int(10, 100) },
+    relations: [],
+    history: [],
+    alive: true,
+    deadSince: -1,
+    evil,
+    cityAttachment: (parentA.cityAttachment + parentB.cityAttachment) / 2,
+    homeCityId,
+    state: 'idle',
+    targetId: -1,
+    goalPos: null,
+    idleTime: 0,
+    replanTimer: 0,
+    attackCooldown: 0,
+    monsterDarkness: 0,
+    animPhase: rng.next() * Math.PI * 2,
+    legendWeaponId: -1,
+    parentIds: [parentA.id, parentB.id],
+    generation: Math.max(parentA.generation, parentB.generation) + 1
+  };
+  c.title = computeTitle(c);
+  return c;
 }

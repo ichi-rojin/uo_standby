@@ -1,6 +1,6 @@
 // 責務: プロシージャル描画(マップ・キャラ・敵・エフェクト)と外部画像差し替え
 import { Graphics, Container, Text, Sprite, Assets, Texture } from 'pixi.js';
-import { COLORS, RENDER, ASSETS } from '../config/constants';
+import { COLORS, RENDER, ASSETS, DUNGEON_COLORS } from '../config/constants';
 import type { Character, City, Village, Road, WeaponKind } from '../domain/types';
 import { monsterColor } from '../domain/Factory';
 
@@ -165,4 +165,20 @@ export function drawEffect(g: Graphics, type: 'damage' | 'heal' | 'buff' | 'debu
   else if (type === 'buff') color = COLORS.BUFF;
   else if (type === 'debuff') color = COLORS.DEBUFF;
   g.circle(0, 0, radius).stroke({ width: 2, color, alpha });
+}
+
+export function buildDungeonIcon(): Container {
+  const cont = new Container();
+  const g = new Graphics();
+  g.poly([0, -RENDER.FORT_RADIUS, RENDER.FORT_RADIUS, 0, 0, RENDER.FORT_RADIUS, -RENDER.FORT_RADIUS, 0])
+    .fill(DUNGEON_COLORS.ENTRANCE);
+  g.circle(0, 0, RENDER.FORT_RADIUS * 0.4).fill(0x000000);
+  cont.addChild(g);
+  return cont;
+}
+
+export function drawLegendAura(g: Graphics, phase: number, r: number): void {
+  g.clear();
+  const pulse = 0.5 + 0.5 * Math.sin(phase);
+  g.circle(0, 0, r + 4 + pulse * 3).stroke({ width: 2, color: DUNGEON_COLORS.LEGEND_GLOW, alpha: 0.4 + pulse * 0.4 });
 }

@@ -69,9 +69,11 @@ export class WindowManager {
     const s = c.stats;
     const info = document.createElement('div');
     const genderTxt = c.gender === 'male' ? '男性' : '女性';
+    const legendTxt = c.legendWeaponId >= 0 ? `<br><span style="color:#ffdd55">伝説武器所持(ID:${c.legendWeaponId})</span>` : '';
+    const parentTxt = c.parentIds ? `<br>両親:#${c.parentIds[0]}・#${c.parentIds[1]}` : '';
     info.innerHTML =
       `種別:${c.kind} 性別:${genderTxt} ${c.evil ? '【悪徳】' : ''}<br>` +
-      `通り名:${c.title}<br>姓名:${c.surname}・${c.givenName}<br>` +
+      `通り名:${c.title}<br>姓名:${c.surname}・${c.givenName} 第${c.generation}世代${parentTxt}<br>` +
       `HP:${Math.floor(s.hp)}/${s.maxHp} MP:${Math.floor(s.mp)}/${s.maxMp}<br>` +
       `健康:${Math.floor(s.health)} 力:${s.power} 瞬発:${s.agility} 反応:${s.reflex}<br>` +
       `知覚:${s.perception} 巧緻:${s.dexterity} 魔法:${s.magic}<br>` +
@@ -79,7 +81,8 @@ export class WindowManager {
       `武器:${c.inventory.weapon} 食料:${c.inventory.food} 財宝:${c.inventory.treasures} 金:${c.inventory.gold}<br>` +
       `帰属度:${c.cityAttachment.toFixed(2)} 状態:${c.state}<br>` +
       `スキル: 剣${c.skills.weaponSword} 槍${c.skills.weaponPole} 弓${c.skills.weaponBow} ` +
-      `魔攻${c.skills.magicAttack} 回復${c.skills.magicHeal} 必殺${c.skills.special}`;
+      `魔攻${c.skills.magicAttack} 回復${c.skills.magicHeal} 必殺${c.skills.special}` +
+      legendTxt;
     body.appendChild(info);
 
     const btn = document.createElement('button');

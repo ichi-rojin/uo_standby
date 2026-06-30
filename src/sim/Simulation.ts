@@ -6,7 +6,7 @@ import type { Vec2 } from '../core/Vec2';
 import { WORLD, COUNTS, AI, COMBAT, STATS, RENDER, TIME } from '../config/constants';
 import type { Character, City } from '../domain/types';
 import { GameClock } from '../domain/GameClock';
-import { createNpc, createMonster } from '../domain/Factory';
+import { createNpc, createMonster, createChildNpc } from '../domain/Factory';
 import { generateWorld, triangleSpawn } from '../world/WorldGen';
 import type { GeneratedWorld } from '../world/WorldGen';
 import { EventLog } from './EventLog';
@@ -17,6 +17,8 @@ import { GOAP, FORT, EMOTION } from '../config/constants';
 import { plan } from '../ai/Goap';
 import type { GoapAction } from '../ai/Goap';
 import { FortSystem } from './Forts';
+import { DUNGEON } from '../config/constants';
+import { DungeonSystem } from '../world/Dungeons';
 
 export class Simulation {
   readonly rng: Rng;
@@ -25,6 +27,7 @@ export class Simulation {
   readonly world: GeneratedWorld;
   readonly chars: Map<number, Character> = new Map();
   readonly forts: FortSystem;
+  readonly dungeons: DungeonSystem;
   private grid: SpatialGrid<Character>;
   private nextId = 1;
   private fortSeq: number;
@@ -33,6 +36,8 @@ export class Simulation {
     this.rng = new Rng(seed);
     this.world = generateWorld(this.rng);
     this.forts = new FortSystem(this.world.forts, this.rng);
+    this.dungeons = new DungeonSystem(this.rng);
+    this.spawnDungeonBosses();
     this.grid = new SpatialGrid<Character>(WORLD.WIDTH, WORLD.HEIGHT, WORLD.CELL_SIZE);
     this.seedPopulation();
   }
@@ -119,6 +124,7 @@ export class Simulation {
     this.maintainPopulation();
     this.maintainChildren();
     this.maintainForts();
+    this.maintainDungeons();
   }
 
   private maintainChildren(): void {
@@ -130,7 +136,7 @@ export class Simulation {
         city.storedChildren = city.storedChildren.filter((ch) => now - ch.bornAt < matureMin);
         for (const _ of ready) {
           if (this.countNpc() >= COUNTS.NPC_MAX) break;
-          this.spawnNpc();
+          this.spawnMaturedChild(city.id);
         }
       }
     }
@@ -255,6 +261,7 @@ export class Simulation {
       c.idleTime = 0;
       if (dist(c.pos, c.goalPos) < AI.ARRIVE_DIST) {
         c.goalPos = null;
+        if (!isMonster) this.tryExploreDungeon(c);
         // 無行動禁止: 都市到着で挨拶
         if (!isMonster) this.maybeGreet(c, neighbors);
       }
@@ -601,5 +608,80 @@ export class Simulation {
       this.addHistory(c, `夜盗に身を落とした`);
       this.log.push(`${this.name(c)}が夜盗化した`, 'red', [c.id]);
     }
+  }
+  private spawnDungeonBosses(): void {
+    for (const d of this.dungeons.dungeons) {
+      if (d.bossId >= 0) continue;
+      const boss = createMonster(this.rng, this.nextId++, { x: d.pos.x, y: d.pos.y }, true);
+      this.chars.set(boss.id, boss);
+      d.bossId = boss.id;
+      d.bossDeadAt = -1;
+      d.cleared = false;
+    }
+  }
+
+  private maintainDungeons(): void {
+    const now = this.clock.minutes;
+    const respawnMin = DUNGEON.BOSS_RESPAWN_YEARS * 12 * 30 * 24 * 60;
+    for (const d of this.dungeons.dungeons) {
+      const boss = d.bossId >= 0 ? this.chars.get(d.bossId) : undefined;
+      if (!boss || !boss.alive) {
+        if (d.bossDeadAt < 0) d.bossDeadAt = now;
+        if (now - d.bossDeadAt >= respawnMin) {
+          d.bossId = -1;
+          this.spawnDungeonBosses();
+        }
+      }
+    }
+  }
+
+  // 都市の保管中の子のうち成人分を両親継承で実体化
+  private spawnMaturedChild(cityId: number): void {
+    const city = this.world.cities[cityId];
+    const pos = this.freeSpawnPos();
+    const candidates = this.aliveList().filter((c) => c.kind === 'npc' && c.homeCityId === cityId);
+    if (candidates.length >= 2) {
+      const a = this.rng.pick(candidates);
+      let b = this.rng.pick(candidates);
+      let guard = 0;
+      while (b.id === a.id && guard < 5) {
+        b = this.rng.pick(candidates);
+        guard++;
+      }
+      const child = createChildNpc(this.rng, this.nextId++, pos, cityId, a, b);
+      this.chars.set(child.id, child);
+      this.addHistory(child, `${a.surname}・${a.givenName}と${b.surname}・${b.givenName}の子として成人した`);
+      this.log.push(`${this.name(child)}が${city.name}で成人した(第${child.generation}世代)`, 'green', [child.id]);
+    } else {
+      this.spawnNpc();
+    }
+  }
+
+  private tryExploreDungeon(c: Character): boolean {
+    const d = this.dungeons.nearestDungeon(c.pos);
+    if (!d) return false;
+    if (dist(c.pos, d.pos) > DUNGEON.EXPLORE_RANGE) return false;
+    const boss = d.bossId >= 0 ? this.chars.get(d.bossId) : undefined;
+    if (boss && boss.alive) return false; // ボス健在は攻略不可
+    if (d.treasures > 0) {
+      c.inventory.treasures += d.treasures;
+      this.log.push(`${this.name(c)}が${d.name}で財宝${d.treasures}個を発見した`, 'gold', [c.id]);
+      this.addHistory(c, `${d.name}で財宝を手に入れた`);
+      d.treasures = 0;
+    }
+    if (d.legendId >= 0) {
+      const legend = this.dungeons.claimLegend(d.legendId, c.id);
+      if (legend) {
+        c.legendWeaponId = legend.id;
+        c.stats.power += legend.powerBonus;
+        c.stats.magic += legend.magicBonus;
+        c.title = computeTitle(c);
+        this.addHistory(c, `伝説の武器「${legend.name}」を手に入れた`);
+        this.log.push(`${this.name(c)}が伝説の武器「${legend.name}」を獲得した`, 'gold', [c.id]);
+        d.legendId = -1;
+      }
+    }
+    d.cleared = true;
+    return true;
   }
 }

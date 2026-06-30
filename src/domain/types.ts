@@ -95,6 +95,9 @@ export interface Character {
   attackCooldown: number;
   monsterDarkness: number; // モンスター色濃度0..1
   animPhase: number;
+  legendWeaponId: number; // -1=未所持
+  parentIds: [number, number] | null; // 系譜(両親ID)
+  generation: number;
 }
 
 export interface City {
@@ -133,4 +136,24 @@ export interface Quest {
   text: string;
   acceptedBy: number;
   done: boolean;
+}
+
+// 第3便追加型
+export interface LegendWeapon {
+  id: number;
+  name: string;
+  powerBonus: number;
+  magicBonus: number;
+  ownerId: number; // -1=未所持(ダンジョン内)
+}
+
+export interface Dungeon {
+  id: number;
+  name: string;
+  pos: Vec2;
+  bossId: number; // 生存ボスのキャラID, -1=不在
+  treasures: number;
+  legendId: number; // -1=取得済み
+  bossDeadAt: number; // ゲーム分, -1=生存
+  cleared: boolean;
 }
