@@ -4,26 +4,27 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Kingdom Aquarium - Demo</title>
+    <title>UO Aquarium Demo</title>
     <style>
-      html,
-      body {
-        margin: 0;
-        padding: 0;
-        width: 100%;
-        height: 100%;
-        overflow: hidden;
-        background: #0b0d12;
-        font-family: 'Segoe UI', 'Hiragino Kaku Gothic ProN', sans-serif;
-      }
-      #app {
-        position: relative;
-        width: 100vw;
-        height: 100vh;
-      }
-      canvas {
-        display: block;
-      }
+      html, body { margin: 0; padding: 0; overflow: hidden; background: #0a0a0f; }
+      #app { position: fixed; inset: 0; }
+      .win { position: absolute; background: rgba(20,22,30,0.95); border: 1px solid #556; color: #dde; font-family: monospace; font-size: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.6); z-index: 100; }
+      .win-head { background: #334; padding: 4px 6px; cursor: move; display: flex; justify-content: space-between; align-items: center; user-select: none; }
+      .win-title { font-weight: bold; }
+      .win-close { cursor: pointer; padding: 0 6px; background: #722; color: #fff; }
+      .win-body { padding: 6px; max-height: 360px; overflow-y: auto; }
+      .win-btn { background: #2a5; color: #fff; border: none; padding: 4px 8px; cursor: pointer; margin: 2px; }
+      .win-btn.revive { background: #a52; }
+      .log-panel { position: absolute; left: 6px; bottom: 6px; width: 360px; max-height: 240px; overflow-y: auto; background: rgba(10,12,18,0.85); border: 1px solid #445; color: #ccd; font-family: monospace; font-size: 11px; padding: 4px; z-index: 50; }
+      .log-line { margin: 1px 0; cursor: default; }
+      .log-line .lk { cursor: pointer; text-decoration: underline; }
+      .chat-panel { position: absolute; right: 6px; top: 48px; width: 280px; max-height: 70vh; overflow-y: auto; z-index: 50; }
+      .chat-item { background: rgba(10,12,18,0.85); border: 1px solid #445; color: #ccd; font-family: monospace; font-size: 11px; padding: 4px; margin-bottom: 4px; position: relative; }
+      .chat-item .lk { cursor: pointer; text-decoration: underline; color: #9cf; }
+      .chat-close { position: absolute; right: 2px; top: 2px; cursor: pointer; color: #f88; }
+      .toolbar { position: absolute; top: 6px; left: 6px; z-index: 50; background: rgba(10,12,18,0.85); border: 1px solid #445; padding: 4px; color: #ccd; font-family: monospace; font-size: 12px; }
+      .toolbar button { background: #345; color: #fff; border: 1px solid #567; cursor: pointer; margin: 0 2px; padding: 2px 6px; }
+      .toolbar button.active { background: #2a5; }
     </style>
   </head>
   <body>

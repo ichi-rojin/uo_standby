@@ -1,177 +1,136 @@
-// src/domain/types.ts
-// 責務: ゲームドメインの基本データ構造を定義する（第2便で AI/感情/夜盗/交配/砦を追加）。
+// 責務: ドメイン全体の型・列挙定義
+import type { Vec2 } from '../core/Vec2';
 
-import type { EntityId } from './ids';
-import type {
-  CharacterKind,
-  Personality,
-  WeaponType,
-  LifeState,
-  EventCategory,
-  EffectKind,
-  AgentGoal,
-  ActionType,
-  Allegiance,
-} from './enums';
+export type Gender = 'male' | 'female';
 
-export interface Vec2 {
-  x: number;
-  y: number;
-}
+export type WeaponKind = 'sword' | 'pole' | 'bow' | 'magic';
 
-export interface GameDate {
-  year: number;
-  month: number;
-  day: number;
-  hour: number;
-}
+export type EntityKind = 'npc' | 'monster' | 'boss';
 
-export interface Attributes {
+export interface Stats {
   hp: number;
   maxHp: number;
   mp: number;
   maxMp: number;
   health: number;
-  build: number;
-  agility: number;
-  reaction: number;
-  perception: number;
-  dexterity: number;
-  magic: number;
+  power: number;
+  agility: number; // 瞬発力(攻撃回数)
+  reflex: number; // 反応(回避)
+  perception: number; // 知覚(発見射程)
+  dexterity: number; // 巧緻性
+  magic: number; // 魔法力
+  honor: number; // 名誉
+  moral: number; // モラル(-悪 +善)
 }
 
 export interface Skills {
-  sword: number;
-  polearm: number;
-  bow: number;
+  weaponSword: number;
+  weaponPole: number;
+  weaponBow: number;
   magicAttack: number;
+  magicHeal: number;
   magicBuff: number;
   magicDebuff: number;
   mapKnowledge: number;
+  special: number;
+}
+
+export interface Needs {
+  hunger: number;
+  sleep: number;
+  lust: number;
+  money: number;
+  fame: number;
+  growth: number;
+  skill: number;
 }
 
 export interface Inventory {
-  weapon: WeaponType;
+  weapon: WeaponKind;
   food: number;
-  valuables: number;
+  treasures: number;
   gold: number;
 }
 
-export interface Desires {
-  basic: number;
-  money: number;
-  honor: number;
-  growth: number;
-  skillLearning: number;
+export type RelationType = 'friend' | 'rival' | 'hatred' | 'love';
+
+export interface Relation {
+  targetId: number;
+  type: RelationType;
+  value: number;
 }
 
 export interface HistoryEntry {
-  date: GameDate;
+  stamp: string;
   text: string;
 }
 
-export interface PlanStep {
-  action: ActionType;
-  targetId: EntityId | null;
-  targetPos: Vec2 | null;
-}
+export type AiState = 'idle' | 'seekFood' | 'seekCity' | 'hunt' | 'wander' | 'flee' | 'mate' | 'banditRaid';
 
-export interface CharacterData {
-  id: EntityId;
-  kind: CharacterKind;
-  familyName: string;
+export interface Character {
+  id: number;
+  kind: EntityKind;
+  gender: Gender;
+  surname: string;
   givenName: string;
-  epithet: string;
-  personality: Personality;
-  allegiance: Allegiance;
-  attr: Attributes;
-  skills: Skills;
-  inventory: Inventory;
-  desires: Desires;
-  position: Vec2;
-  velocity: Vec2;
-  goal: AgentGoal;
-  goalTarget: Vec2 | null;
-  plan: PlanStep[];
-  planTimer: number;
-  attackCooldown: number;
-  combatTargetId: EntityId | null;
-  state: LifeState;
-  deadTimer: number;
-  idleTimer: number;
-  homeCityId: EntityId | null;
-  fortId: EntityId | null;
-  attachment: number;
-  tint: number;
-  animPhase: number;
-  breedingCooldownDays: number;
-  history: HistoryEntry[];
-}
-
-export interface QuestData {
-  id: EntityId;
   title: string;
-  reward: number;
+  pos: Vec2;
+  vel: Vec2;
+  stats: Stats;
+  skills: Skills;
+  needs: Needs;
+  inventory: Inventory;
+  relations: Relation[];
+  history: HistoryEntry[];
+  alive: boolean;
+  deadSince: number; // ゲーム時刻(分) -1=生存
+  evil: boolean;
+  cityAttachment: number; // 0=放浪 1=帰属
+  homeCityId: number;
+  state: AiState;
+  targetId: number;
+  goalPos: Vec2 | null;
+  idleTime: number;
+  replanTimer: number;
+  attackCooldown: number;
+  monsterDarkness: number; // モンスター色濃度0..1
+  animPhase: number;
 }
 
-export interface CityData {
-  id: EntityId;
+export interface City {
+  id: number;
   name: string;
-  position: Vec2;
+  pos: Vec2;
   population: number;
-  residentIds: Set<EntityId>;
-  quests: QuestData[];
+  storedChildren: { bornAt: number; gender: Gender }[];
+  quests: Quest[];
   events: HistoryEntry[];
-  pendingChildren: PendingChild[];
 }
 
-export interface PendingChild {
-  parentAId: EntityId;
-  parentBId: EntityId;
-  birth: GameDate;
-  matureYear: number;
-  tint: number;
-}
-
-export interface SupplyPostData {
-  id: EntityId;
+export interface Village {
+  id: number;
   name: string;
-  position: Vec2;
+  pos: Vec2;
 }
 
-export interface FortData {
-  id: EntityId;
-  position: Vec2;
-  banditIds: Set<EntityId>;
+export interface Road {
+  a: Vec2;
+  b: Vec2;
 }
 
-export interface RoadSegment {
-  from: Vec2;
-  to: Vec2;
+export interface Fort {
+  id: number;
+  pos: Vec2;
+  members: number[];
+  alive: boolean;
 }
 
-export interface EffectInstance {
-  id: EntityId;
-  kind: EffectKind;
-  position: Vec2;
-  age: number;
-  duration: number;
+export type QuestKind = 'hunt' | 'escort' | 'delivery' | 'shopping' | 'assassinate';
+
+export interface Quest {
+  id: number;
+  kind: QuestKind;
   text: string;
-  color: number;
-}
-
-export interface EventLogEntry {
-  id: EntityId;
-  date: GameDate;
-  category: EventCategory;
-  message: string;
-  relatedCharacterIds: EntityId[];
-}
-
-export interface ChatLogEntry {
-  id: EntityId;
-  date: GameDate;
-  speakerId: EntityId;
-  speakerName: string;
-  message: string;
+  acceptedBy: number;
+  done: boolean;
 }
