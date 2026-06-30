@@ -1,162 +1,140 @@
-// src/systems/CombatSystem.ts
-// 責務: ダメージ計算・命中処理・死亡判定・履歴/ログ/エフェクト/感情変化を担う戦闘中核。
+// File: src/systems/CombatSystem.ts
+// 責務: 近接・魔法攻撃の判定とダメージ計算、死亡処理、戦利品付与、エフェクト/ログ発火。
 
-import { WorldState } from '../world/WorldState';
-import type { CharacterData } from '../domain/types';
-import { LifeState, CharacterKind, EventCategory, WeaponType, Allegiance } from '../domain/enums';
-import { COMBAT, RELATION, CHAT } from '../config/aiConfig';
-import { DEATH } from '../config/constants';
-import { Rng } from '../util/rng';
-import { EffectSystem } from './EffectSystem';
-import { EventLog } from '../log/EventLog';
-import { RelationGraph } from '../social/RelationGraph';
-import { characterDisplayName } from '../entities/Character';
-import { combatShout, deathLine } from '../social/ChatGenerator';
-import { cloneDate } from '../util/time';
-
-function weaponSkill(c: CharacterData): number {
-  switch (c.inventory.weapon) {
-    case WeaponType.Sword:
-      return c.skills.sword;
-    case WeaponType.Polearm:
-      return c.skills.polearm;
-    case WeaponType.Bow:
-      return c.skills.bow;
-    default:
-      return 0;
-  }
-}
-
-function computeDamage(attacker: CharacterData, defender: CharacterData, rng: Rng): number {
-  const power =
-    COMBAT.BASE_DAMAGE +
-    attacker.attr.build * COMBAT.STRENGTH_SCALE +
-    weaponSkill(attacker) * COMBAT.SKILL_SCALE;
-  const defense = defender.attr.reaction * COMBAT.DEFENSE_SCALE;
-  let dmg = Math.max(1, power - defense);
-  if (rng.chance(COMBAT.CRIT_CHANCE)) {
-    dmg *= COMBAT.CRIT_MULT;
-  }
-  dmg *= rng.range(0.85, 1.15);
-  return Math.round(dmg);
-}
+import { World } from '../world/World';
+import { Character } from '../entities/Character';
+import { GameTime } from '../core/GameTime';
+import { EventBus, FxKind } from '../game/EventBus';
+import { EventCategory } from '../ui/EventLog';
+import { EntityKind, CharacterState, WeaponType } from '../domain/types';
+import { CombatConfig } from '../config/BehaviorConfig';
+import { StatsConfig } from '../config/GameConfig';
+import { healthDebuffFactor } from '../domain/Stats';
+import { RNG } from '../core/RNG';
+import { RelationSystem } from './RelationSystem';
 
 export class CombatSystem {
+  private readonly lastAttack: Map<number, number>;
+
   constructor(
-    private readonly effects: EffectSystem,
-    private readonly log: EventLog,
-    private readonly relations: RelationGraph,
-    private readonly rng: Rng,
-  ) {}
-
-  resolveAttack(world: WorldState, attacker: CharacterData, defender: CharacterData): void {
-    if (attacker.state === LifeState.Dead || defender.state === LifeState.Dead) return;
-    if (attacker.attackCooldown > 0) return;
-    attacker.attackCooldown = COMBAT.ATTACK_COOLDOWN;
-
-    if (this.rng.chance(CHAT.COMBAT_SHOUT_CHANCE)) {
-      this.log.pushChat(
-        world.date,
-        attacker.id,
-        characterDisplayName(attacker),
-        combatShout(this.rng, defender),
-      );
-    }
-
-    const dmg = computeDamage(attacker, defender, this.rng);
-    defender.attr.hp -= dmg;
-    defender.attr.health = Math.max(0, defender.attr.health - COMBAT.HEALTH_LOSS_ON_HIT);
-    this.effects.spawnDamage(world, defender.position, dmg);
-
-    if (defender.attr.hp <= 0) {
-      this.handleDeath(world, attacker, defender);
-    } else {
-      defender.combatTargetId = attacker.id;
-    }
+    private readonly world: World,
+    private readonly time: GameTime,
+    private readonly bus: EventBus,
+    private readonly rng: RNG,
+    private readonly relations: RelationSystem,
+  ) {
+    this.lastAttack = new Map();
   }
 
-  private handleDeath(world: WorldState, attacker: CharacterData, victim: CharacterData): void {
-    victim.attr.hp = 0;
-    victim.state = LifeState.Dead;
-    victim.deadTimer = DEATH.GRAYSCALE_SECONDS;
-    victim.combatTargetId = null;
-    victim.plan = [];
-
-    this.log.pushChat(world.date, victim.id, characterDisplayName(victim), deathLine(this.rng));
-
-    const victimName = characterDisplayName(victim);
-    const attackerName = characterDisplayName(attacker);
-    this.log.pushEvent(
-      world.date,
-      EventCategory.Death,
-      `${attackerName} が ${victimName} を討伐した`,
-      [attacker.id, victim.id],
-    );
-
-    attacker.history.push({
-      date: cloneDate(world.date),
-      text: `${victimName} を討伐`,
-    });
-
-    if (victim.kind !== CharacterKind.NPC) {
-      const loot = this.rng.int(5, 30);
-      attacker.inventory.gold += loot;
-      attacker.inventory.food += 1;
-      attacker.history.push({
-        date: cloneDate(world.date),
-        text: `${victimName} を捕食`,
-      });
-    } else {
-      attacker.inventory.gold += victim.inventory.gold;
-      attacker.inventory.valuables += victim.inventory.valuables;
-    }
-
-    this.propagateGrief(world, attacker, victim);
-  }
-
-  private propagateGrief(world: WorldState, killer: CharacterData, victim: CharacterData): void {
-    if (victim.kind !== CharacterKind.NPC || killer.kind !== CharacterKind.NPC) return;
-    const near = world.grid.queryRadius(victim.position, 400);
-    for (const id of near) {
-      if (id === killer.id || id === victim.id) continue;
-      const witness = world.characters.get(id);
-      if (!witness || witness.kind !== CharacterKind.NPC) continue;
-      const bond = this.relations.get(witness.id, victim.id);
-      if (bond > RELATION.FRIEND_THRESHOLD) {
-        this.relations.adjust(witness.id, killer.id, -RELATION.KILL_RELATED_HATE);
-        this.log.pushEvent(
-          world.date,
-          EventCategory.Relation,
-          `${characterDisplayName(witness)} が ${characterDisplayName(killer)} を深く憎んだ`,
-          [witness.id, killer.id],
-        );
-      }
-    }
-  }
-
-  cooldownAll(world: WorldState, dt: number): void {
-    for (const c of world.characters.values()) {
-      if (c.attackCooldown > 0) c.attackCooldown = Math.max(0, c.attackCooldown - dt);
-    }
-  }
-
-  banditRob(world: WorldState, robber: CharacterData, victim: CharacterData): void {
-    if (victim.state === LifeState.Dead) return;
-    if (robber.allegiance !== Allegiance.Bandit) return;
-    const amount = Math.round(victim.inventory.gold * 0.5);
-    if (amount <= 0) {
-      this.resolveAttack(world, robber, victim);
+  public tryAttack(attacker: Character, target: Character): void {
+    if (attacker.isDead() || target.isDead()) {
       return;
     }
-    victim.inventory.gold -= amount;
-    robber.inventory.gold += amount;
-    this.effects.spawnDebuff(world, victim.position);
-    this.log.pushEvent(
-      world.date,
-      EventCategory.Money,
-      `${characterDisplayName(robber)} が ${characterDisplayName(victim)} から ${amount} 金を強奪`,
-      [robber.id, victim.id],
-    );
-    this.relations.adjust(victim.id, robber.id, -RELATION.KILL_RELATED_HATE / 2);
+    const dist = Math.hypot(target.x - attacker.x, target.y - attacker.y);
+    if (dist > CombatConfig.ATTACK_RANGE) {
+      return;
+    }
+    const last = this.lastAttack.get(attacker.id) ?? -9999;
+    if (this.time.getTotalHours() - last < CombatConfig.ATTACK_COOLDOWN_HOURS) {
+      return;
+    }
+    this.lastAttack.set(attacker.id, this.time.getTotalHours());
+    attacker.state = CharacterState.Fighting;
+
+    const damage = this.computeDamage(attacker);
+    target.hp -= damage;
+    target.health = Math.max(0, target.health - CombatConfig.HEALTH_HIT_ON_DAMAGE);
+
+    this.bus.emitFx({ kind: FxKind.Damage, x: target.x, y: target.y, amount: damage });
+
+    if (target.kind === EntityKind.Npc && attacker.kind === EntityKind.Npc) {
+      this.relations.onAttacked(target, attacker);
+    }
+
+    if (target.hp <= 0) {
+      this.kill(attacker, target);
+    }
+  }
+
+  private computeDamage(attacker: Character): number {
+    const skill = this.weaponSkill(attacker);
+    const factor = healthDebuffFactor(attacker.health);
+    const raw =
+      CombatConfig.BASE_DAMAGE +
+      skill * CombatConfig.DAMAGE_SKILL_SCALE +
+      attacker.attributes.physique * CombatConfig.DAMAGE_PHYSIQUE_SCALE;
+    return Math.max(1, Math.round(raw * factor));
+  }
+
+  private weaponSkill(c: Character): number {
+    switch (c.inventory.weapon) {
+      case WeaponType.Sword:
+        return c.skills.sword;
+      case WeaponType.Polearm:
+        return c.skills.polearm;
+      case WeaponType.Bow:
+        return c.skills.bow;
+      default:
+        return 0;
+    }
+  }
+
+  private kill(attacker: Character, target: Character): void {
+    target.hp = 0;
+    target.state = CharacterState.Dead;
+    target.deathTimer = 0;
+
+    const stamp = this.time.formatStamp();
+    const targetName = target.kind === EntityKind.Npc ? target.fullName : '魔物';
+    this.bus.emitWorld({
+      stamp,
+      text: `${attacker.kind === EntityKind.Npc ? attacker.fullName : '魔物'} が ${targetName} を討伐`,
+      category: EventCategory.Death,
+      related: [attacker, target],
+    });
+
+    attacker.addHistory(stamp, `${targetName}を討伐`);
+
+    if (target.kind === EntityKind.Npc) {
+      this.bus.emitChat({
+        stamp,
+        message: this.rng.pick(['ぐ…無念…', 'あとは…頼む…', 'こんな所で…']),
+        speaker: target,
+      });
+    }
+
+    if (attacker.kind === EntityKind.Npc) {
+      attacker.inventory.food += CombatConfig.FOOD_GAIN_ON_KILL;
+      if (target.isEvil || target.kind === EntityKind.Monster) {
+        attacker.inventory.money += CombatConfig.MONEY_GAIN_ON_KILL;
+        this.bus.emitWorld({
+          stamp,
+          text: `${attacker.fullName} が ${CombatConfig.MONEY_GAIN_ON_KILL} の金銭を獲得`,
+          category: EventCategory.Money,
+          related: [attacker],
+        });
+      }
+      if (this.rng.chance(CombatConfig.VALUABLE_DROP_CHANCE)) {
+        attacker.inventory.valuables += 1;
+        attacker.addHistory(stamp, '値打ちものを手に入れた');
+        this.bus.emitWorld({
+          stamp,
+          text: `${attacker.fullName} が値打ちものを手に入れた`,
+          category: EventCategory.Treasure,
+          related: [attacker],
+        });
+      }
+      this.growSkill(attacker, stamp);
+    }
+
+    this.lastAttack.delete(target.id);
+  }
+
+  private growSkill(c: Character, stamp: string): void {
+    const gain = 1;
+    if (c.inventory.weapon === WeaponType.Sword && c.skills.sword < StatsConfig.SKILL_MAX) {
+      c.skills.sword += gain;
+      c.addHistory(stamp, `剣のスキルが${gain}上がった`);
+    }
   }
 }

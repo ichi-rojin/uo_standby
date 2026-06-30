@@ -1,38 +1,61 @@
-// src/ai/Actions.ts
-// 責務: GOAP の各アクションの前提条件・効果・コストの定義と、PlanStep 生成ヘルパを提供する。
+// File: src/ai/Actions.ts
+// 責務: GOAPで使用する具体的アクション定義の集合。狩り・交易・休息・社交・略奪・徘徊。
 
-import { ActionType } from '../domain/enums';
-import type { CharacterData, PlanStep, Vec2 } from '../domain/types';
-import type { EntityId } from '../domain/ids';
+import { GoapAction, Goal } from './Goap';
+import { ActionCost } from '../config/BehaviorConfig';
 
-export function moveStep(pos: Vec2): PlanStep {
-  return { action: ActionType.MoveTo, targetId: null, targetPos: { x: pos.x, y: pos.y } };
+export enum ActionName {
+  Hunt = 'hunt',
+  Trade = 'trade',
+  Rest = 'rest',
+  Socialize = 'socialize',
+  Rob = 'rob',
+  Wander = 'wander',
 }
 
-export function attackStep(targetId: EntityId): PlanStep {
-  return { action: ActionType.AttackTarget, targetId, targetPos: null };
-}
+export const ALL_ACTIONS: readonly GoapAction[] = [
+  {
+    name: ActionName.Hunt,
+    cost: ActionCost.HUNT,
+    preconditions: { nearEnemy: true },
+    effects: { hasFood: true, hasMoney: true, hasValuables: true },
+  },
+  {
+    name: ActionName.Trade,
+    cost: ActionCost.TRADE,
+    preconditions: { nearCity: true, hasValuables: true },
+    effects: { hasMoney: true, hasValuables: false },
+  },
+  {
+    name: ActionName.Rest,
+    cost: ActionCost.REST,
+    preconditions: { nearCity: true },
+    effects: { lowHp: false, lowHealth: false },
+  },
+  {
+    name: ActionName.Socialize,
+    cost: ActionCost.SOCIALIZE,
+    preconditions: { nearAlly: true },
+    effects: {},
+  },
+  {
+    name: ActionName.Rob,
+    cost: ActionCost.ROB,
+    preconditions: { isEvil: true, nearTarget: true },
+    effects: { hasMoney: true },
+  },
+  {
+    name: ActionName.Wander,
+    cost: ActionCost.WANDER,
+    preconditions: {},
+    effects: { nearEnemy: true, nearCity: true, nearAlly: true, nearTarget: true },
+  },
+];
 
-export function fleeStep(pos: Vec2): PlanStep {
-  return { action: ActionType.FleeFrom, targetId: null, targetPos: { x: pos.x, y: pos.y } };
-}
-
-export function enterCityStep(pos: Vec2): PlanStep {
-  return { action: ActionType.EnterCity, targetId: null, targetPos: { x: pos.x, y: pos.y } };
-}
-
-export function recoverStep(): PlanStep {
-  return { action: ActionType.RecoverInCity, targetId: null, targetPos: null };
-}
-
-export function robStep(targetId: EntityId): PlanStep {
-  return { action: ActionType.RobTarget, targetId, targetPos: null };
-}
-
-export function socializeStep(targetId: EntityId): PlanStep {
-  return { action: ActionType.Socialize, targetId, targetPos: null };
-}
-
-export function lowHealth(c: CharacterData): boolean {
-  return c.attr.hp < c.attr.maxHp * 0.35 || c.attr.health < 50;
-}
+export const GOALS: readonly Goal[] = [
+  { name: 'survive_hp', desired: { lowHp: false }, priority: 100 },
+  { name: 'survive_health', desired: { lowHealth: false }, priority: 90 },
+  { name: 'eat', desired: { hasFood: true }, priority: 80 },
+  { name: 'earn', desired: { hasMoney: true }, priority: 50 },
+  { name: 'grow', desired: { hasValuables: true }, priority: 30 },
+];

@@ -1,43 +1,40 @@
-// src/entities/City.ts
-// 責務: 都市エンティティの生成ファクトリ（第2便で pendingChildren を追加）。
+// File: src/entities/City.ts
+// 責務: 都市エンティティ。人口・滞在NPC・クエスト・都市内出来事を保持する。
 
-import { nextEntityId } from '../domain/ids';
-import type { CityData, Vec2, QuestData } from '../domain/types';
-import { Rng } from '../util/rng';
+import { Entity } from './Entity';
 
-const CITY_PREFIX: readonly string[] = [
-  'リオン', 'ガルド', 'ベルナ', 'カステル', 'ドラン', 'エルフィ', 'フォルト', 'グレイ',
-  'ハーミ', 'イスト', 'ジェノ', 'カラル', 'ルミナ', 'ミドガ', 'ノルン', 'オアシ',
-  'パルマ', 'クレス', 'ロセン', 'サリア',
-];
-
-const QUEST_TITLES: readonly string[] = [
-  'モンスター討伐', '夜盗の砦調査', 'ダンジョン探索', '行方不明者の捜索', '隊商の護衛',
-];
-
-function rollQuests(rng: Rng): QuestData[] {
-  const count = rng.int(1, 3);
-  const quests: QuestData[] = [];
-  for (let i = 0; i < count; i += 1) {
-    quests.push({
-      id: nextEntityId(),
-      title: rng.pick(QUEST_TITLES),
-      reward: rng.int(50, 500),
-    });
-  }
-  return quests;
+export interface CityEvent {
+  stamp: string;
+  text: string;
 }
 
-export function createCity(position: Vec2, index: number, rng: Rng): CityData {
-  const baseName = index < CITY_PREFIX.length ? CITY_PREFIX[index] : `都市${index}`;
-  return {
-    id: nextEntityId(),
-    name: `${baseName}市`,
-    position: { x: position.x, y: position.y },
-    population: rng.int(200, 2000),
-    residentIds: new Set(),
-    quests: rollQuests(rng),
-    events: [],
-    pendingChildren: [],
-  };
+export interface CityQuest {
+  id: number;
+  text: string;
+}
+
+export class City extends Entity {
+  public readonly name: string;
+  public population: number;
+  public readonly stayingNpcIds: Set<number>;
+  public readonly storedChildren: { bornHour: number; gender: number }[];
+  public readonly quests: CityQuest[];
+  public readonly events: CityEvent[];
+
+  constructor(x: number, y: number, name: string, population: number) {
+    super(x, y);
+    this.name = name;
+    this.population = population;
+    this.stayingNpcIds = new Set<number>();
+    this.storedChildren = [];
+    this.quests = [];
+    this.events = [];
+  }
+
+  public addEvent(stamp: string, text: string): void {
+    this.events.push({ stamp, text });
+    if (this.events.length > 50) {
+      this.events.shift();
+    }
+  }
 }

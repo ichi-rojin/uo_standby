@@ -1,147 +1,208 @@
-// src/systems/BanditSystem.ts
-// 責務: 金欠/性格による夜盗化、砦の建設・配下リクルート、砦の朽ち消滅を日次で処理する。
+// File: src/systems/BanditSystem.ts
+// 責務: 悪徳NPCの夜盗化・砦建設・配下リクルート・金銭強奪・砦消滅判定を管理する。
 
-import { WorldState } from '../world/WorldState';
-import type { CharacterData, FortData } from '../domain/types';
-import { Allegiance, CharacterKind, LifeState, Personality, EventCategory } from '../domain/enums';
-import { BANDIT } from '../config/aiConfig';
-import { Rng } from '../util/rng';
-import { EventLog } from '../log/EventLog';
-import { createFort } from '../entities/Fort';
-import { characterDisplayName, refreshEpithet } from '../entities/Character';
-import { distanceSq } from '../util/math';
-import type { EntityId } from '../domain/ids';
+import { World } from '../world/World';
+import { Character } from '../entities/Character';
+import { Fort } from '../entities/Fort';
+import { GameTime } from '../core/GameTime';
+import { EventBus } from '../game/EventBus';
+import { EventCategory } from '../ui/EventLog';
+import { BanditConfig } from '../config/BehaviorConfig';
+import { EntityKind } from '../domain/types';
+import { computePower } from '../domain/Stats';
+import { RNG } from '../core/RNG';
 
-const FORT_DISBAND_DIST_SQ = BANDIT.FORT_BUILD_RADIUS * BANDIT.FORT_BUILD_RADIUS;
+export interface FortLifecycleHandler {
+  onFortCreated(fort: Fort): void;
+  onFortDecayed(fort: Fort): void;
+}
 
 export class BanditSystem {
+  public readonly forts: Fort[];
+  private lifecycle: FortLifecycleHandler | null;
+
   constructor(
-    private readonly log: EventLog,
-    private readonly rng: Rng,
-  ) {}
-
-  processDaily(world: WorldState): void {
-    this.turnNpcsToBandits(world);
-    this.recruitWeakBandits(world);
-    this.decayEmptyForts(world);
+    private readonly world: World,
+    private readonly time: GameTime,
+    private readonly bus: EventBus,
+    private readonly rng: RNG,
+  ) {
+    this.forts = [];
+    this.lifecycle = null;
   }
 
-  private turnNpcsToBandits(world: WorldState): void {
-    for (const c of world.characters.values()) {
-      if (c.kind !== CharacterKind.NPC) continue;
-      if (c.state === LifeState.Dead) continue;
-      if (c.allegiance === Allegiance.Bandit) continue;
-      const broke = c.inventory.gold < BANDIT.GOLD_THRESHOLD;
-      const cruel = c.personality === Personality.Cruel || c.personality === Personality.Greedy;
-      const probability = (broke ? BANDIT.TURN_BANDIT_CHANCE_PER_DAY : 0) + (cruel ? 0.01 : 0);
-      if (probability > 0 && this.rng.chance(probability)) {
-        this.makeBandit(world, c);
+  public setLifecycle(h: FortLifecycleHandler): void {
+    this.lifecycle = h;
+  }
+
+  public update(): void {
+    this.evaluateTurnEvil();
+    this.evaluateFortBuild();
+    this.evaluateRecruit();
+    this.evaluateRob();
+    this.evaluateDecay();
+  }
+
+  private evaluateTurnEvil(): void {
+    for (const c of this.world.characters.values()) {
+      if (c.kind !== EntityKind.Npc || c.isDead() || c.isEvil) {
+        continue;
+      }
+      if (c.inventory.money <= BanditConfig.EVIL_MONEY_THRESHOLD) {
+        c.isEvil = true;
+        const stamp = this.time.formatStamp();
+        c.addHistory(stamp, '困窮の末、夜盗へと身を落とした');
+        this.bus.emitWorld({
+          stamp,
+          text: `${c.fullName} が夜盗化した`,
+          category: EventCategory.Death,
+          related: [c],
+        });
       }
     }
   }
 
-  private makeBandit(world: WorldState, c: CharacterData): void {
-    c.allegiance = Allegiance.Bandit;
-    refreshEpithet(c);
-    if (c.homeCityId !== null) {
-      const city = world.cities.find((x) => x.id === c.homeCityId);
-      if (city) city.residentIds.delete(c.id);
-      c.homeCityId = null;
-    }
-    const fort = this.findOrCreateFort(world, c);
-    fort.banditIds.add(c.id);
-    c.fortId = fort.id;
-    this.log.pushEvent(
-      world.date,
-      EventCategory.Relation,
-      `${characterDisplayName(c)} が夜盗に身を落とした`,
-      [c.id],
-    );
-  }
-
-  private findOrCreateFort(world: WorldState, c: CharacterData): FortData {
-    let best: FortData | null = null;
-    let bestDist = FORT_DISBAND_DIST_SQ;
-    for (const fort of world.forts.values()) {
-      const d = distanceSq(c.position, fort.position);
-      if (d < bestDist) {
-        bestDist = d;
-        best = fort;
+  private evaluateFortBuild(): void {
+    for (const c of this.world.characters.values()) {
+      if (c.kind !== EntityKind.Npc || c.isDead() || !c.isEvil) {
+        continue;
+      }
+      if (this.isMember(c.id)) {
+        continue;
+      }
+      if (this.rng.chance(BanditConfig.FORT_BUILD_CHANCE)) {
+        const fort = new Fort(c.x, c.y, c.id);
+        this.forts.push(fort);
+        if (this.lifecycle) {
+          this.lifecycle.onFortCreated(fort);
+        }
+        const stamp = this.time.formatStamp();
+        c.addHistory(stamp, '砦を築いた');
+        this.bus.emitWorld({
+          stamp,
+          text: `${c.fullName} が砦を築いた`,
+          category: EventCategory.Normal,
+          related: [c],
+        });
       }
     }
-    if (best) return best;
-    if (world.forts.size >= BANDIT.FORT_MAX) {
-      const any = world.forts.values().next().value as FortData | undefined;
-      if (any) return any;
-    }
-    const fort = createFort({ x: c.position.x, y: c.position.y });
-    world.forts.set(fort.id, fort);
-    this.log.pushEvent(
-      world.date,
-      EventCategory.Generic,
-      `${characterDisplayName(c)} が砦を築いた`,
-      [c.id],
-    );
-    return fort;
   }
 
-  private recruitWeakBandits(world: WorldState): void {
-    for (const fort of world.forts.values()) {
-      const leader = this.pickLeader(world, fort);
-      if (!leader) continue;
-      const near = world.grid.queryRadius(fort.position, BANDIT.FORT_BUILD_RADIUS);
-      for (const id of near) {
-        const candidate = world.characters.get(id);
-        if (!candidate) continue;
-        if (candidate.kind !== CharacterKind.NPC) continue;
-        if (candidate.state === LifeState.Dead) continue;
-        if (candidate.allegiance === Allegiance.Bandit) continue;
-        const weak = candidate.attr.build < leader.attr.build * BANDIT.RECRUIT_STRENGTH_RATIO;
-        if (weak && this.rng.chance(0.02)) {
-          candidate.allegiance = Allegiance.Bandit;
-          refreshEpithet(candidate);
-          candidate.fortId = fort.id;
-          fort.banditIds.add(candidate.id);
-          this.log.pushEvent(
-            world.date,
-            EventCategory.Relation,
-            `${characterDisplayName(candidate)} が砦の配下となった`,
-            [candidate.id, leader.id],
-          );
+  private evaluateRecruit(): void {
+    for (const fort of this.forts) {
+      if (fort.decayed) {
+        continue;
+      }
+      const leaderPower = this.fortPower(fort);
+      const near = this.world.grid.queryRadius(
+        fort.x,
+        fort.y,
+        BanditConfig.RECRUIT_RANGE,
+      );
+      for (const c of near) {
+        if (c.kind !== EntityKind.Npc || c.isDead() || this.isMember(c.id)) {
+          continue;
+        }
+        if (!c.isEvil) {
+          continue;
+        }
+        const power = computePower(c.attributes, c.skills);
+        if (power < leaderPower * BanditConfig.RECRUIT_POWER_RATIO) {
+          fort.addMember(c.id);
+          const stamp = this.time.formatStamp();
+          c.addHistory(stamp, '砦の配下に加わった');
+          this.bus.emitWorld({
+            stamp,
+            text: `${c.fullName} が砦の配下になった`,
+            category: EventCategory.Normal,
+            related: [c],
+          });
         }
       }
     }
   }
 
-  private pickLeader(world: WorldState, fort: FortData): CharacterData | null {
-    let leader: CharacterData | null = null;
-    for (const id of fort.banditIds) {
-      const c = world.characters.get(id);
-      if (!c || c.state === LifeState.Dead) continue;
-      if (!leader || c.attr.build > leader.attr.build) leader = c;
+  private evaluateRob(): void {
+    for (const c of this.world.characters.values()) {
+      if (c.kind !== EntityKind.Npc || c.isDead() || !c.isEvil) {
+        continue;
+      }
+      const near = this.world.grid.queryRadius(c.x, c.y, BanditConfig.ROB_RANGE);
+      for (const t of near) {
+        if (
+          t.id === c.id ||
+          t.kind !== EntityKind.Npc ||
+          t.isDead() ||
+          t.isEvil ||
+          t.inventory.money <= 0
+        ) {
+          continue;
+        }
+        const amount = Math.min(BanditConfig.ROB_AMOUNT, t.inventory.money);
+        t.inventory.money -= amount;
+        c.inventory.money += amount;
+        const stamp = this.time.formatStamp();
+        this.bus.emitWorld({
+          stamp,
+          text: `${c.fullName} が ${t.fullName} から ${amount} を強奪`,
+          category: EventCategory.Money,
+          related: [c, t],
+        });
+        this.bus.emitChat({ stamp, message: '有り金を置いていけ！', speaker: c });
+        break;
+      }
     }
-    return leader;
   }
 
-  private decayEmptyForts(world: WorldState): void {
-    const toRemove: EntityId[] = [];
-    for (const fort of world.forts.values()) {
-      let aliveBandits = 0;
-      for (const id of fort.banditIds) {
-        const c = world.characters.get(id);
-        if (c && c.state === LifeState.Alive && c.allegiance === Allegiance.Bandit) {
-          aliveBandits += 1;
-        } else {
-          fort.banditIds.delete(id);
+  private evaluateDecay(): void {
+    for (let i = this.forts.length - 1; i >= 0; i--) {
+      const fort = this.forts[i];
+      if (fort.decayed) {
+        continue;
+      }
+      for (const id of Array.from(fort.memberIds)) {
+        const member = this.world.characters.get(id);
+        if (!member || member.isDead() || !member.isEvil) {
+          fort.removeMember(id);
         }
       }
-      if (aliveBandits === 0) {
-        toRemove.push(fort.id);
+      if (fort.isEmpty()) {
+        fort.decayed = true;
+        if (this.lifecycle) {
+          this.lifecycle.onFortDecayed(fort);
+        }
+        const stamp = this.time.formatStamp();
+        this.bus.emitWorld({
+          stamp,
+          text: '所属悪徳NPCが絶え、砦が朽ちて消滅した',
+          category: EventCategory.Normal,
+          related: [],
+        });
+        this.forts.splice(i, 1);
       }
     }
-    for (const id of toRemove) {
-      world.forts.delete(id);
-      this.log.pushEvent(world.date, EventCategory.Generic, `砦が朽ちて消滅した`, []);
+  }
+
+  private fortPower(fort: Fort): number {
+    let max = 0;
+    for (const id of fort.memberIds) {
+      const m = this.world.characters.get(id);
+      if (m) {
+        const p = computePower(m.attributes, m.skills);
+        if (p > max) {
+          max = p;
+        }
+      }
     }
+    return max;
+  }
+
+  private isMember(id: number): boolean {
+    for (const fort of this.forts) {
+      if (fort.memberIds.has(id)) {
+        return true;
+      }
+    }
+    return false;
   }
 }

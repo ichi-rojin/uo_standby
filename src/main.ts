@@ -1,15 +1,12 @@
-// src/main.ts
-// 責務: アプリのエントリポイント。マウント要素を取得し Game を初期化する。
+// File: src/main.ts
+// 責務: エントリポイント。ホスト要素を取得しゲームを起動する。
 
-import { Game } from './engine/Game';
+import { Game } from './game/Game';
 
-async function bootstrap(): Promise<void> {
-  const mount = document.getElementById('app');
-  if (!mount) {
-    throw new Error('mount element #app not found');
-  }
-  const game = new Game();
-  await game.init(mount);
+const host = document.getElementById('app');
+if (!host) {
+  throw new Error('app host element not found');
 }
 
-void bootstrap();
+const game = new Game();
+void game.start(host);
