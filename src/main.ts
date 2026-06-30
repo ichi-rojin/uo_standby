@@ -1,15 +1,21 @@
-// src/main.ts
-// 責務: アプリのエントリポイント。マウント要素を取得し Game を初期化する。
-
-import { Game } from './engine/Game';
+// 責務: アプリ起動エントリ(PixiJS初期化 → Game起動)
+import { Application } from 'pixi.js';
+import { Game } from './game/game';
 
 async function bootstrap(): Promise<void> {
-  const mount = document.getElementById('app');
-  if (!mount) {
-    throw new Error('mount element #app not found');
-  }
-  const game = new Game();
-  await game.init(mount);
+  const root = document.getElementById('app');
+  if (!root) throw new Error('app root not found');
+
+  const app = new Application();
+  await app.init({
+    background: 0x101018,
+    resizeTo: window,
+    antialias: true
+  });
+  root.appendChild(app.canvas);
+
+  const game = new Game(app, root);
+  game.init();
 }
 
 void bootstrap();

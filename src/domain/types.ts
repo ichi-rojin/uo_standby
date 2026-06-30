@@ -1,177 +1,75 @@
-// src/domain/types.ts
-// 責務: ゲームドメインの基本データ構造を定義する（第2便で AI/感情/夜盗/交配/砦を追加）。
+// 責務: ゲーム内ドメインの型定義集約
+export type Vec2 = { x: number; y: number };
 
-import type { EntityId } from './ids';
-import type {
-  CharacterKind,
-  Personality,
-  WeaponType,
-  LifeState,
-  EventCategory,
-  EffectKind,
-  AgentGoal,
-  ActionType,
-  Allegiance,
-} from './enums';
+export type Gender = 'male' | 'female';
 
-export interface Vec2 {
-  x: number;
-  y: number;
-}
+export type WeaponType = 'sword' | 'pole' | 'bow' | 'magic';
 
-export interface GameDate {
-  year: number;
-  month: number;
-  day: number;
-  hour: number;
-}
+export type CharacterKind = 'npc' | 'monster' | 'boss';
 
-export interface Attributes {
+export type EntityKind = CharacterKind | 'city' | 'supply' | 'fort';
+
+export interface Abilities {
   hp: number;
   maxHp: number;
   mp: number;
   maxMp: number;
   health: number;
-  build: number;
+  power: number;
   agility: number;
   reaction: number;
   perception: number;
   dexterity: number;
   magic: number;
+  honor: number;
+  moral: number;
 }
 
 export interface Skills {
-  sword: number;
-  polearm: number;
-  bow: number;
+  swordSkill: number;
+  poleSkill: number;
+  bowSkill: number;
   magicAttack: number;
+  magicHeal: number;
   magicBuff: number;
   magicDebuff: number;
   mapKnowledge: number;
+  special: number;
+}
+
+export interface Needs {
+  hunger: number;
+  sleep: number;
+  lust: number;
+  greed: number;
+  honorWant: number;
+  growth: number;
+  skillWant: number;
 }
 
 export interface Inventory {
   weapon: WeaponType;
   food: number;
   valuables: number;
-  gold: number;
+  money: number;
 }
 
-export interface Desires {
-  basic: number;
-  money: number;
-  honor: number;
-  growth: number;
-  skillLearning: number;
-}
+export type GoalType =
+  | 'idle'
+  | 'hunt'
+  | 'goCity'
+  | 'rest'
+  | 'mate'
+  | 'banditRaid'
+  | 'wander';
 
 export interface HistoryEntry {
-  date: GameDate;
+  tick: number;
   text: string;
 }
 
-export interface PlanStep {
-  action: ActionType;
-  targetId: EntityId | null;
-  targetPos: Vec2 | null;
-}
+export type LogCategory = 'death' | 'relation' | 'treasure' | 'money' | 'default';
 
-export interface CharacterData {
-  id: EntityId;
-  kind: CharacterKind;
-  familyName: string;
-  givenName: string;
-  epithet: string;
-  personality: Personality;
-  allegiance: Allegiance;
-  attr: Attributes;
-  skills: Skills;
-  inventory: Inventory;
-  desires: Desires;
-  position: Vec2;
-  velocity: Vec2;
-  goal: AgentGoal;
-  goalTarget: Vec2 | null;
-  plan: PlanStep[];
-  planTimer: number;
-  attackCooldown: number;
-  combatTargetId: EntityId | null;
-  state: LifeState;
-  deadTimer: number;
-  idleTimer: number;
-  homeCityId: EntityId | null;
-  fortId: EntityId | null;
-  attachment: number;
-  tint: number;
-  animPhase: number;
-  breedingCooldownDays: number;
-  history: HistoryEntry[];
-}
-
-export interface QuestData {
-  id: EntityId;
-  title: string;
-  reward: number;
-}
-
-export interface CityData {
-  id: EntityId;
-  name: string;
-  position: Vec2;
-  population: number;
-  residentIds: Set<EntityId>;
-  quests: QuestData[];
-  events: HistoryEntry[];
-  pendingChildren: PendingChild[];
-}
-
-export interface PendingChild {
-  parentAId: EntityId;
-  parentBId: EntityId;
-  birth: GameDate;
-  matureYear: number;
-  tint: number;
-}
-
-export interface SupplyPostData {
-  id: EntityId;
-  name: string;
-  position: Vec2;
-}
-
-export interface FortData {
-  id: EntityId;
-  position: Vec2;
-  banditIds: Set<EntityId>;
-}
-
-export interface RoadSegment {
-  from: Vec2;
-  to: Vec2;
-}
-
-export interface EffectInstance {
-  id: EntityId;
-  kind: EffectKind;
-  position: Vec2;
-  age: number;
-  duration: number;
-  text: string;
-  color: number;
-}
-
-export interface EventLogEntry {
-  id: EntityId;
-  date: GameDate;
-  category: EventCategory;
-  message: string;
-  relatedCharacterIds: EntityId[];
-}
-
-export interface ChatLogEntry {
-  id: EntityId;
-  date: GameDate;
-  speakerId: EntityId;
-  speakerName: string;
-  message: string;
+export interface RelationMap {
+  [otherId: number]: number;
 }

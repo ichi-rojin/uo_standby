@@ -1,183 +1,93 @@
-// src/entities/Character.ts
-// 責務: キャラクター生成ファクトリと能力値導出（第2便で allegiance/plan/砦/交配フィールドを追加）。
+// 責務: キャラクター(NPC/モンスター/ボス)のデータモデル
+import type {
+  Abilities,
+  Skills,
+  Needs,
+  Inventory,
+  Vec2,
+  CharacterKind,
+  Gender,
+  GoalType,
+  HistoryEntry,
+  RelationMap
+} from '../domain/types';
 
-import { nextEntityId } from '../domain/ids';
-import type { EntityId } from '../domain/ids';
-import { CharacterKind, Personality, WeaponType, LifeState, AgentGoal, Allegiance } from '../domain/enums';
-import type { CharacterData, Vec2, Attributes, Skills, Inventory, Desires } from '../domain/types';
-import { STATS } from '../config/constants';
-import { Rng } from '../util/rng';
-
-const FAMILY_NAMES: readonly string[] = [
-  'アルド', 'ベルク', 'カイン', 'ドレイ', 'エルム', 'ファル', 'ガロ', 'ハイン',
-  'イーリ', 'ジェイク', 'カルロ', 'ロウン', 'マグナ', 'ノルド', 'オルガ', 'パイン',
-];
-
-const GIVEN_NAMES: readonly string[] = [
-  'アキ', 'ベル', 'シオン', 'ダン', 'エナ', 'フィー', 'グレン', 'ハル',
-  'イヴ', 'ジン', 'カイ', 'レン', 'ミオ', 'ノア', 'オウ', 'ピア',
-];
-
-const MONSTER_NAMES: readonly string[] = [
-  'ゴブ', 'スラ', 'オーガ', 'ワイト', 'コボル', 'ハーピ', 'ウルフ', 'バット',
-];
-
-const PERSONALITIES: readonly Personality[] = [
-  Personality.Brave,
-  Personality.Coward,
-  Personality.Greedy,
-  Personality.Honorable,
-  Personality.Wanderer,
-  Personality.Homebound,
-  Personality.Cruel,
-  Personality.Kind,
-];
-
-const WEAPONS: readonly WeaponType[] = [WeaponType.Sword, WeaponType.Polearm, WeaponType.Bow];
-
-function rollAttributes(rng: Rng, kind: CharacterKind): Attributes {
-  const bossMul = kind === CharacterKind.Boss ? 2.2 : 1.0;
-  const hp = Math.round(STATS.BASE_HP * bossMul * rng.range(0.8, 1.3));
-  const mp = Math.round(STATS.BASE_MP * bossMul * rng.range(0.7, 1.4));
-  return {
-    hp,
-    maxHp: hp,
-    mp,
-    maxMp: mp,
-    health: STATS.BASE_HEALTH,
-    build: Math.round(rng.range(10, 30) * bossMul),
-    agility: Math.round(rng.range(10, 30) * bossMul),
-    reaction: Math.round(rng.range(10, 30) * bossMul),
-    perception: Math.round(rng.range(10, 30) * bossMul),
-    dexterity: Math.round(rng.range(10, 30) * bossMul),
-    magic: Math.round(rng.range(5, 30) * bossMul),
-  };
-}
-
-function rollSkills(rng: Rng): Skills {
-  return {
-    sword: rng.int(0, 60),
-    polearm: rng.int(0, 60),
-    bow: rng.int(0, 60),
-    magicAttack: rng.int(0, 50),
-    magicBuff: rng.int(0, 50),
-    magicDebuff: rng.int(0, 50),
-    mapKnowledge: rng.int(0, 80),
-  };
-}
-
-function rollInventory(rng: Rng): Inventory {
-  return {
-    weapon: rng.pick(WEAPONS),
-    food: rng.int(3, 12),
-    valuables: 0,
-    gold: rng.int(0, 50),
-  };
-}
-
-function rollDesires(rng: Rng): Desires {
-  return {
-    basic: rng.range(0, 1),
-    money: rng.range(0, 1),
-    honor: rng.range(0, 1),
-    growth: rng.range(0, 1),
-    skillLearning: rng.range(0, 1),
-  };
-}
-
-function buildEpithet(personality: Personality, allegiance: Allegiance): string {
-  if (allegiance === Allegiance.Bandit) return '夜盗の';
-  switch (personality) {
-    case Personality.Brave:
-      return '勇敢なる';
-    case Personality.Coward:
-      return '臆病な';
-    case Personality.Greedy:
-      return '強欲な';
-    case Personality.Honorable:
-      return '誇り高き';
-    case Personality.Wanderer:
-      return '放浪の';
-    case Personality.Homebound:
-      return '定住の';
-    case Personality.Cruel:
-      return '残忍な';
-    case Personality.Kind:
-      return '心優しき';
-    default:
-      return '名もなき';
-  }
-}
-
-export interface CreateCharacterParams {
+export class Character {
+  id: number;
   kind: CharacterKind;
-  position: Vec2;
-  rng: Rng;
-  tint: number;
-  homeCityId: EntityId | null;
-}
+  gender: Gender;
+  surname: string;
+  givenName: string;
+  title: string;
+  pos: Vec2;
+  vel: Vec2;
+  ab: Abilities;
+  skills: Skills;
+  needs: Needs;
+  inv: Inventory;
+  isBandit: boolean;
+  cityAttachment: number;
+  homeCityId: number;
+  goal: GoalType;
+  targetId: number;
+  targetPos: Vec2 | null;
+  alive: boolean;
+  deathTick: number;
+  attackCooldown: number;
+  animPhase: number;
+  history: HistoryEntry[];
+  relations: RelationMap;
+  buffTicks: number;
+  debuffTicks: number;
+  hueSeed: number;
 
-export function createCharacter(params: CreateCharacterParams): CharacterData {
-  const { kind, position, rng, tint, homeCityId } = params;
-  const personality = rng.pick(PERSONALITIES);
-  const attr = rollAttributes(rng, kind);
-  const isNpc = kind === CharacterKind.NPC;
-  const familyName = isNpc ? rng.pick(FAMILY_NAMES) : rng.pick(MONSTER_NAMES);
-  const givenName = isNpc ? rng.pick(GIVEN_NAMES) : rng.pick(MONSTER_NAMES);
-  const allegiance = isNpc ? Allegiance.Citizen : Allegiance.Wild;
-  return {
-    id: nextEntityId(),
-    kind,
-    familyName,
-    givenName,
-    epithet: buildEpithet(personality, allegiance),
-    personality,
-    allegiance,
-    attr,
-    skills: rollSkills(rng),
-    inventory: rollInventory(rng),
-    desires: rollDesires(rng),
-    position: { x: position.x, y: position.y },
-    velocity: { x: 0, y: 0 },
-    goal: AgentGoal.Idle,
-    goalTarget: null,
-    plan: [],
-    planTimer: 0,
-    attackCooldown: 0,
-    combatTargetId: null,
-    state: LifeState.Alive,
-    deadTimer: 0,
-    idleTimer: 0,
-    homeCityId,
-    fortId: null,
-    attachment: rng.range(0, 1),
-    tint,
-    animPhase: rng.range(0, Math.PI * 2),
-    breedingCooldownDays: 0,
-    history: [],
-  };
-}
+  constructor(id: number, kind: CharacterKind, gender: Gender) {
+    this.id = id;
+    this.kind = kind;
+    this.gender = gender;
+    this.surname = '';
+    this.givenName = '';
+    this.title = '';
+    this.pos = { x: 0, y: 0 };
+    this.vel = { x: 0, y: 0 };
+    this.ab = {
+      hp: 100, maxHp: 100, mp: 50, maxMp: 50, health: 100,
+      power: 10, agility: 10, reaction: 10, perception: 10,
+      dexterity: 10, magic: 10, honor: 0, moral: 0
+    };
+    this.skills = {
+      swordSkill: 0, poleSkill: 0, bowSkill: 0,
+      magicAttack: 0, magicHeal: 0, magicBuff: 0, magicDebuff: 0,
+      mapKnowledge: 0, special: 0
+    };
+    this.needs = {
+      hunger: 50, sleep: 50, lust: 50, greed: 50,
+      honorWant: 50, growth: 50, skillWant: 50
+    };
+    this.inv = { weapon: 'sword', food: 10, valuables: 0, money: 50 };
+    this.isBandit = false;
+    this.cityAttachment = 0.5;
+    this.homeCityId = -1;
+    this.goal = 'idle';
+    this.targetId = -1;
+    this.targetPos = null;
+    this.alive = true;
+    this.deathTick = -1;
+    this.attackCooldown = 0;
+    this.animPhase = 0;
+    this.history = [];
+    this.relations = {};
+    this.buffTicks = 0;
+    this.debuffTicks = 0;
+    this.hueSeed = 0;
+  }
 
-export function characterDisplayName(c: CharacterData): string {
-  return `(${c.epithet})${c.familyName}・${c.givenName}`;
-}
+  fullName(): string {
+    return `(${this.title})${this.surname}・${this.givenName}`;
+  }
 
-export function refreshEpithet(c: CharacterData): void {
-  c.epithet = buildEpithet(c.personality, c.allegiance);
-}
-
-export function createChildCharacter(
-  rng: Rng,
-  position: Vec2,
-  tint: number,
-  homeCityId: EntityId | null,
-): CharacterData {
-  const c = createCharacter({
-    kind: CharacterKind.NPC,
-    position,
-    rng,
-    tint,
-    homeCityId,
-  });
-  return c;
+  addHistory(tick: number, text: string): void {
+    this.history.push({ tick, text });
+    if (this.history.length > 200) this.history.shift();
+  }
 }

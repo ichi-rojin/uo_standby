@@ -1,74 +1,71 @@
-// src/render/ProceduralTextures.ts
-// 責務: PixiJS Graphics でプロシージャルにマップチップ・キャラ・敵・拠点の基本形状を生成し、
-//       設定により外部画像（Texture）へ差し替えられるようにする。
+// 責務: PixiJS Graphicsによるプロシージャル描画ヘルパー
+import { Graphics } from 'pixi.js';
+import { ENTITY, COLORS } from '../config/constants';
+import type { Character } from '../entities/character';
+import type { WeaponType } from '../domain/types';
 
-import { Graphics, Texture, Sprite, Assets, Container } from 'pixi.js';
-import { RENDER_CONFIG } from '../config/renderConfig';
-import { ENTITY_SIZE } from '../config/constants';
-
-export interface SpriteFactory {
-  createCityVisual(): Container;
-  createSupplyVisual(): Container;
+export function monsterColor(hueSeed: number, power: number): number {
+  const darkness = Math.min(1, power / 30);
+  const base = 0.7 - darkness * 0.5;
+  const r = Math.floor((0.4 + hueSeed * 0.3) * base * 255);
+  const g = Math.floor((0.2 + (1 - hueSeed) * 0.2) * base * 255);
+  const b = Math.floor((0.2 + hueSeed * 0.3) * base * 255);
+  return (r << 16) | (g << 8) | b;
 }
 
-class ProceduralFactory implements SpriteFactory {
-  createCityVisual(): Container {
-    const g = new Graphics();
-    const r = ENTITY_SIZE.CITY_RADIUS;
-    g.circle(0, 0, r).fill({ color: 0x3a4a6a });
-    g.circle(0, 0, r * 0.7).fill({ color: 0x5a6f9a });
-    g.rect(-r * 0.35, -r * 0.55, r * 0.7, r * 0.5).fill({ color: 0x8a6a3a });
-    g.moveTo(-r * 0.4, -r * 0.55)
-      .lineTo(0, -r * 0.85)
-      .lineTo(r * 0.4, -r * 0.55)
-      .fill({ color: 0xb04030 });
-    return g;
-  }
-
-  createSupplyVisual(): Container {
-    const g = new Graphics();
-    const r = ENTITY_SIZE.SUPPLY_RADIUS;
-    g.circle(0, 0, r).fill({ color: 0x4a5a3a });
-    g.rect(-r * 0.5, -r * 0.3, r, r * 0.6).fill({ color: 0x8a7a4a });
-    g.moveTo(-r * 0.55, -r * 0.3)
-      .lineTo(0, -r * 0.6)
-      .lineTo(r * 0.55, -r * 0.3)
-      .fill({ color: 0x7a4a30 });
-    return g;
+function weaponMark(g: Graphics, weapon: WeaponType, r: number): void {
+  g.setStrokeStyle({ width: 2, color: 0xffffff });
+  if (weapon === 'sword') {
+    g.moveTo(0, -r).lineTo(0, -r - 8).stroke();
+  } else if (weapon === 'pole') {
+    g.moveTo(0, -r).lineTo(0, -r - 12).stroke();
+  } else if (weapon === 'bow') {
+    g.moveTo(-4, -r - 6).lineTo(4, -r - 6).stroke();
+    g.moveTo(-4, -r - 10).lineTo(4, -r - 2).stroke();
+  } else {
+    g.circle(0, -r - 7, 3).fill({ color: 0x66ffff });
   }
 }
 
-class TextureFactory implements SpriteFactory {
-  private readonly cityTex: Texture;
-  private readonly supplyTex: Texture;
-
-  constructor(cityTex: Texture, supplyTex: Texture) {
-    this.cityTex = cityTex;
-    this.supplyTex = supplyTex;
-  }
-
-  createCityVisual(): Container {
-    const s = new Sprite(this.cityTex);
-    s.anchor.set(0.5);
-    s.width = ENTITY_SIZE.CITY_RADIUS * 2;
-    s.height = ENTITY_SIZE.CITY_RADIUS * 2;
-    return s;
-  }
-
-  createSupplyVisual(): Container {
-    const s = new Sprite(this.supplyTex);
-    s.anchor.set(0.5);
-    s.width = ENTITY_SIZE.SUPPLY_RADIUS * 2;
-    s.height = ENTITY_SIZE.SUPPLY_RADIUS * 2;
-    return s;
-  }
+export function drawNpcBody(g: Graphics, c: Character): void {
+  g.clear();
+  const r = ENTITY.NPC_RADIUS;
+  const color = c.isBandit ? COLORS.BANDIT : c.gender === 'male' ? COLORS.NPC_MALE : COLORS.NPC_FEMALE;
+  g.circle(0, -r * 0.5, r * 0.5).fill({ color });
+  g.roundRect(-r * 0.5, 0, r, r, 2).fill({ color });
+  weaponMark(g, c.inv.weapon, r);
 }
 
-export async function createSpriteFactory(): Promise<SpriteFactory> {
-  if (!RENDER_CONFIG.useExternalSprites) {
-    return new ProceduralFactory();
+export function drawMonsterBody(g: Graphics, c: Character): void {
+  g.clear();
+  const r = ENTITY.MONSTER_RADIUS;
+  const color = monsterColor(c.hueSeed, c.ab.power);
+  const spikes = 8;
+  let started = false;
+  for (let i = 0; i < spikes; i++) {
+    const a1 = (i / spikes) * Math.PI * 2;
+    const a2 = ((i + 0.5) / spikes) * Math.PI * 2;
+    const ox = Math.cos(a1) * r;
+    const oy = Math.sin(a1) * r;
+    const ix = Math.cos(a2) * r * 0.45;
+    const iy = Math.sin(a2) * r * 0.45;
+    if (!started) { g.moveTo(ox, oy); started = true; } else { g.lineTo(ox, oy); }
+    g.lineTo(ix, iy);
   }
-  const cityTex = await Assets.load<Texture>(RENDER_CONFIG.spritePaths.city);
-  const supplyTex = await Assets.load<Texture>(RENDER_CONFIG.spritePaths.supplyPost);
-  return new TextureFactory(cityTex, supplyTex);
+  g.closePath().fill({ color });
+}
+
+export function drawCityShape(g: Graphics): void {
+  g.clear();
+  const r = ENTITY.CITY_RADIUS;
+  g.rect(-r, -r * 0.6, r * 2, r * 1.2).fill({ color: COLORS.CITY });
+  g.moveTo(-r, -r * 0.6).lineTo(0, -r).lineTo(r, -r * 0.6).closePath().fill({ color: 0xaa7733 });
+  g.rect(-r * 0.2, 0, r * 0.4, r * 0.6).fill({ color: 0x553311 });
+}
+
+export function drawSupplyShape(g: Graphics): void {
+  g.clear();
+  const r = ENTITY.SUPPLY_RADIUS;
+  g.circle(0, 0, r).fill({ color: COLORS.SUPPLY });
+  g.rect(-r * 0.5, -r * 0.5, r, r).fill({ color: 0x775533 });
 }
