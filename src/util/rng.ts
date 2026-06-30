@@ -1,6 +1,4 @@
-// src/util/rng.ts
-// 責務: 決定論的な擬似乱数生成器（mulberry32）を提供する。
-
+// 責務: 決定論的な擬似乱数生成（mulberry32）
 export class Rng {
   private state: number;
 
@@ -17,18 +15,18 @@ export class Rng {
   }
 
   range(min: number, max: number): number {
-    return min + (max - min) * this.next();
+    return min + this.next() * (max - min);
   }
 
   int(min: number, max: number): number {
     return Math.floor(this.range(min, max + 1));
   }
 
-  pick<T>(items: readonly T[]): T {
-    return items[this.int(0, items.length - 1)];
+  pick<T>(arr: readonly T[]): T {
+    return arr[this.int(0, arr.length - 1)];
   }
 
-  chance(probability: number): boolean {
-    return this.next() < probability;
+  chance(p: number): boolean {
+    return this.next() < p;
   }
 }

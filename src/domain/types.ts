@@ -1,177 +1,216 @@
-// src/domain/types.ts
-// 責務: ゲームドメインの基本データ構造を定義する（第2便で AI/感情/夜盗/交配/砦を追加）。
+// 責務: ゲームドメインの型定義（エンティティ・能力値・列挙）
+export type EntityId = number;
 
-import type { EntityId } from './ids';
-import type {
-  CharacterKind,
-  Personality,
-  WeaponType,
-  LifeState,
-  EventCategory,
-  EffectKind,
-  AgentGoal,
-  ActionType,
-  Allegiance,
-} from './enums';
+export type Sex = 'male' | 'female';
 
-export interface Vec2 {
-  x: number;
-  y: number;
-}
+export type WeaponKind = 'sword' | 'pole' | 'bow' | 'magic';
 
-export interface GameDate {
-  year: number;
-  month: number;
-  day: number;
-  hour: number;
-}
+export type MagicKind = 'attack' | 'heal' | 'buff' | 'debuff';
 
-export interface Attributes {
+export type CharacterKind = 'npc' | 'bandit' | 'monster' | 'boss';
+
+export type Personality = {
+  aggression: number;
+  courage: number;
+  greed: number;
+  lust: number;
+  sociability: number;
+  ambition: number;
+  wanderlust: number;
+};
+
+export type Stats = {
   hp: number;
-  maxHp: number;
+  hpMax: number;
   mp: number;
-  maxMp: number;
+  mpMax: number;
   health: number;
-  build: number;
+  power: number;
   agility: number;
   reaction: number;
   perception: number;
   dexterity: number;
   magic: number;
-}
-
-export interface Skills {
-  sword: number;
-  polearm: number;
-  bow: number;
-  magicAttack: number;
-  magicBuff: number;
-  magicDebuff: number;
-  mapKnowledge: number;
-}
-
-export interface Inventory {
-  weapon: WeaponType;
-  food: number;
-  valuables: number;
-  gold: number;
-}
-
-export interface Desires {
-  basic: number;
-  money: number;
   honor: number;
-  growth: number;
-  skillLearning: number;
-}
+  moral: number;
+};
 
-export interface HistoryEntry {
-  date: GameDate;
+export type Needs = {
+  food: number;
+  sleep: number;
+  libido: number;
+};
+
+export type Skills = {
+  weaponMastery: Record<WeaponKind, number>;
+  magic: Record<MagicKind, number>;
+  mapKnowledge: number;
+  specials: string[];
+  spells: string[];
+};
+
+export type Inventory = {
+  weapon: WeaponKind;
+  food: number;
+  treasures: number;
+  money: number;
+};
+
+export type Buff = {
+  stat: keyof Stats;
+  amount: number;
+  ttl: number;
+};
+
+export type HistoryEntry = {
+  stamp: string;
   text: string;
-}
+};
 
-export interface PlanStep {
-  action: ActionType;
-  targetId: EntityId | null;
-  targetPos: Vec2 | null;
-}
+export type CaptiveState = {
+  capturedBy: EntityId | null;
+  followingLeader: EntityId | null;
+  imprisoned: boolean;
+};
 
-export interface CharacterData {
+export type Character = {
   id: EntityId;
   kind: CharacterKind;
-  familyName: string;
-  givenName: string;
-  epithet: string;
+  firstName: string;
+  lastName: string;
+  title: string;
+  sex: Sex;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  stats: Stats;
+  needs: Needs;
   personality: Personality;
-  allegiance: Allegiance;
-  attr: Attributes;
   skills: Skills;
   inventory: Inventory;
-  desires: Desires;
-  position: Vec2;
-  velocity: Vec2;
-  goal: AgentGoal;
-  goalTarget: Vec2 | null;
-  plan: PlanStep[];
-  planTimer: number;
-  attackCooldown: number;
-  combatTargetId: EntityId | null;
-  state: LifeState;
-  deadTimer: number;
-  idleTimer: number;
-  homeCityId: EntityId | null;
+  buffs: Buff[];
+  experience: number;
+  alive: boolean;
+  deadTicks: number;
+  homeId: EntityId | null;
   fortId: EntityId | null;
-  attachment: number;
-  tint: number;
-  animPhase: number;
-  breedingCooldownDays: number;
+  targetId: EntityId | null;
+  goal: GoalType;
+  attackCooldown: number;
+  reproCooldown: number;
+  idleTicks: number;
+  relations: Map<EntityId, number>;
   history: HistoryEntry[];
-}
+  biomeIndex: number;
+  fleeing: boolean;
+  captive: CaptiveState;
+  animPhase: number;
+};
 
-export interface QuestData {
-  id: EntityId;
-  title: string;
-  reward: number;
-}
+export type GoalType =
+  | 'idle'
+  | 'hunt'
+  | 'eat'
+  | 'sleep'
+  | 'mate'
+  | 'gainMoney'
+  | 'restCity'
+  | 'wander'
+  | 'flee'
+  | 'rob'
+  | 'raid'
+  | 'follow';
 
-export interface CityData {
+export type City = {
   id: EntityId;
   name: string;
-  position: Vec2;
+  x: number;
+  y: number;
   population: number;
-  residentIds: Set<EntityId>;
-  quests: QuestData[];
+  defense: number;
+  residents: EntityId[];
+  children: ChildRecord[];
+  quests: Quest[];
   events: HistoryEntry[];
-  pendingChildren: PendingChild[];
-}
+};
 
-export interface PendingChild {
-  parentAId: EntityId;
-  parentBId: EntityId;
-  birth: GameDate;
-  matureYear: number;
-  tint: number;
-}
+export type ChildRecord = {
+  sex: Sex;
+  lastName: string;
+  maturityTick: number;
+};
 
-export interface SupplyPostData {
+export type Village = {
   id: EntityId;
   name: string;
-  position: Vec2;
-}
+  x: number;
+  y: number;
+};
 
-export interface FortData {
+export type Fort = {
   id: EntityId;
-  position: Vec2;
-  banditIds: Set<EntityId>;
-}
+  x: number;
+  y: number;
+  members: EntityId[];
+  alive: boolean;
+};
 
-export interface RoadSegment {
-  from: Vec2;
-  to: Vec2;
-}
-
-export interface EffectInstance {
+export type Boss = {
   id: EntityId;
-  kind: EffectKind;
-  position: Vec2;
-  age: number;
-  duration: number;
+  charId: EntityId;
+  x: number;
+  y: number;
+};
+
+export type Dungeon = {
+  id: EntityId;
+  x: number;
+  y: number;
+  cleared: boolean;
+  legendaryWeapon: string;
+  treasure: number;
+};
+
+export type QuestType = 'slayBoss' | 'slayBandit' | 'dungeon' | 'escort' | 'delivery' | 'assassinate';
+
+export type Quest = {
+  id: EntityId;
+  type: QuestType;
+  cityId: EntityId;
+  targetId: EntityId | null;
+  reward: number;
+  acceptedBy: EntityId | null;
+  done: boolean;
+  description: string;
+};
+
+export type Road = {
+  ax: number;
+  ay: number;
+  bx: number;
+  by: number;
+};
+
+export type EventLogEntry = {
   text: string;
   color: number;
-}
+  refs: EntityId[];
+};
 
-export interface EventLogEntry {
-  id: EntityId;
-  date: GameDate;
-  category: EventCategory;
-  message: string;
-  relatedCharacterIds: EntityId[];
-}
+export type TalkLogEntry = {
+  id: number;
+  from: EntityId;
+  to: EntityId | null;
+  text: string;
+};
 
-export interface ChatLogEntry {
-  id: EntityId;
-  date: GameDate;
-  speakerId: EntityId;
-  speakerName: string;
-  message: string;
-}
+export type EffectKind = 'damage' | 'heal' | 'buff' | 'debuff' | 'magic';
+
+export type Effect = {
+  x: number;
+  y: number;
+  kind: EffectKind;
+  ttl: number;
+  value: number;
+};

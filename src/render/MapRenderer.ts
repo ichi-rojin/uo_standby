@@ -1,45 +1,110 @@
-// src/render/MapRenderer.ts
-// 責務: 背景マップチップと道路網（薄いグレー）を静的に一度だけ描画する。
+// 責務: バイオーム地表・道路・都市・村・ダンジョン・砦の静的/準静的描画
+import { Container, Graphics, Text } from 'pixi.js';
+import { COUNTS, WORLD } from '../config/constants';
+import { BIOME_COLORS } from '../world/biome';
+import {
+  drawCityIcon,
+  drawVillageIcon,
+  drawDungeonIcon,
+  drawFortIcon,
+} from './proceduralTextures';
+import type { GameState } from '../state/gameState';
 
-import { Container, Graphics } from 'pixi.js';
-import { WorldState } from '../world/WorldState';
-import { WORLD } from '../config/constants';
-
-const TILE_SIZE = 500;
-const GROUND_COLOR_A = 0x18221a;
-const GROUND_COLOR_B = 0x1c2620;
-const ROAD_COLOR = 0x9aa0a8;
+const ROAD_COLOR = 0xb0b0b0;
 const ROAD_ALPHA = 0.35;
-const ROAD_WIDTH = 14;
 
 export class MapRenderer {
-  readonly container: Container;
+  readonly container = new Container();
+  private readonly ground = new Graphics();
+  private readonly roadGfx = new Graphics();
+  private readonly staticIcons = new Container();
+  private readonly fortLayer = new Container();
+  private readonly cityLabels: Text[] = [];
 
-  constructor(world: WorldState) {
-    this.container = new Container();
+  constructor() {
+    this.container.addChild(this.ground);
+    this.container.addChild(this.roadGfx);
+    this.container.addChild(this.staticIcons);
+    this.container.addChild(this.fortLayer);
+  }
+
+  buildStatic(state: GameState): void {
     this.drawGround();
-    this.drawRoads(world);
+    this.drawRoads(state);
+    this.drawStaticIcons(state);
   }
 
   private drawGround(): void {
-    const g = new Graphics();
-    const cols = Math.ceil(WORLD.WIDTH / TILE_SIZE);
-    const rows = Math.ceil(WORLD.HEIGHT / TILE_SIZE);
-    for (let r = 0; r < rows; r += 1) {
-      for (let c = 0; c < cols; c += 1) {
-        const color = (r + c) % 2 === 0 ? GROUND_COLOR_A : GROUND_COLOR_B;
-        g.rect(c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE).fill({ color });
+    const cols = Math.ceil(Math.sqrt(COUNTS.BIOMES));
+    const cellW = WORLD.WIDTH / cols;
+    const cellH = WORLD.HEIGHT / cols;
+    for (let cy = 0; cy < cols; cy++) {
+      for (let cx = 0; cx < cols; cx++) {
+        const idx = (cy * cols + cx) % COUNTS.BIOMES;
+        this.ground
+          .rect(cx * cellW, cy * cellH, cellW, cellH)
+          .fill({ color: BIOME_COLORS[idx] });
       }
     }
-    this.container.addChild(g);
   }
 
-  private drawRoads(world: WorldState): void {
-    const g = new Graphics();
-    for (const seg of world.roads) {
-      g.moveTo(seg.from.x, seg.from.y).lineTo(seg.to.x, seg.to.y);
+  private drawRoads(state: GameState): void {
+    this.roadGfx.clear();
+    for (const r of state.roads) {
+      this.roadGfx
+        .moveTo(r.ax, r.ay)
+        .lineTo(r.bx, r.by)
+        .stroke({ color: ROAD_COLOR, width: 6, alpha: ROAD_ALPHA });
     }
-    g.stroke({ color: ROAD_COLOR, width: ROAD_WIDTH, alpha: ROAD_ALPHA });
-    this.container.addChild(g);
+  }
+
+  private drawStaticIcons(state: GameState): void {
+    this.staticIcons.removeChildren();
+    this.cityLabels.length = 0;
+
+    for (const d of state.dungeons) {
+      const g = new Graphics();
+      drawDungeonIcon(g);
+      g.position.set(d.x, d.y);
+      this.staticIcons.addChild(g);
+    }
+    for (const v of state.villages) {
+      const g = new Graphics();
+      drawVillageIcon(g);
+      g.position.set(v.x, v.y);
+      this.staticIcons.addChild(g);
+    }
+    for (const city of state.cities) {
+      const g = new Graphics();
+      drawCityIcon(g);
+      g.position.set(city.x, city.y);
+      this.staticIcons.addChild(g);
+      const label = new Text({
+        text: '',
+        style: { fontSize: 12, fill: 0xffffff, align: 'center' },
+      });
+      label.anchor.set(0.5, 0);
+      label.position.set(city.x, city.y + 28);
+      this.staticIcons.addChild(label);
+      this.cityLabels.push(label);
+    }
+  }
+
+  updateDynamic(state: GameState): void {
+    for (let i = 0; i < state.cities.length; i++) {
+      const city = state.cities[i];
+      const label = this.cityLabels[i];
+      if (!label) continue;
+      const npcCount = city.residents.length;
+      label.text = `${city.name} NPC:${npcCount} 人口:${city.population}`;
+    }
+    this.fortLayer.removeChildren();
+    for (const fort of state.forts) {
+      if (!fort.alive) continue;
+      const g = new Graphics();
+      drawFortIcon(g);
+      g.position.set(fort.x, fort.y);
+      this.fortLayer.addChild(g);
+    }
   }
 }

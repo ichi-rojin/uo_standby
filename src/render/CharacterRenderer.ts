@@ -1,142 +1,164 @@
-// src/render/CharacterRenderer.ts
-// 責務: 全キャラクターの動的描画（ボディ・HP/MPバー・名前ラベル・健康度・死亡グレースケール・簡易アニメ）を担う。
+// 責務: キャラクターのアイコン/HPバー/MPバー/ラベルの動的描画とカリング
+import { Container, Graphics, Text, Sprite, Assets, Texture } from 'pixi.js';
+import { RENDER, HEALTH } from '../config/constants';
+import { SPRITE_SETTINGS } from '../config/settings';
+import { drawNpcIcon, drawMonsterIcon, drawBossIcon } from './proceduralTextures';
+import { displayName } from '../systems/combatSystem';
+import type { Character, EntityId } from '../domain/types';
+import type { GameState } from '../state/gameState';
 
-import { Container, Graphics, Text, TextStyle } from 'pixi.js';
-import { WorldState } from '../world/WorldState';
-import type { CharacterData } from '../domain/types';
-import type { EntityId } from '../domain/ids';
-import { CharacterKind, LifeState } from '../domain/enums';
-import { ENTITY_SIZE, BARS } from '../config/constants';
-import { applyGrayscale } from './ColorUtil';
-import { characterDisplayName } from '../entities/Character';
-
-const NAME_STYLE = new TextStyle({
-  fill: 0xffffff,
-  fontSize: 14,
-  fontFamily: 'sans-serif',
-  align: 'center',
-  stroke: { color: 0x000000, width: 3 },
-});
-
-interface CharVisual {
-  wrap: Container;
-  body: Graphics;
-  bars: Graphics;
+type CharView = {
+  root: Container;
+  icon: Graphics;
+  sprite: Sprite | null;
+  hpBar: Graphics;
+  mpBar: Graphics;
   label: Text;
-  lastTint: number;
-  lastState: LifeState;
-}
+  built: boolean;
+};
 
-export type CharacterClickHandler = (id: EntityId) => void;
+const HP_COLOR = 0x40ff40;
+const MP_COLOR = 0x4080ff;
+const BAR_BG = 0x303030;
 
 export class CharacterRenderer {
-  readonly container: Container;
-  private readonly visuals: Map<EntityId, CharVisual> = new Map();
-  private readonly onClick: CharacterClickHandler;
+  readonly container = new Container();
+  private readonly views = new Map<EntityId, CharView>();
+  private readonly externalTextures = new Map<string, Texture>();
 
-  constructor(onClick: CharacterClickHandler) {
-    this.container = new Container();
-    this.onClick = onClick;
-  }
-
-  private radiusOf(c: CharacterData): number {
-    if (c.kind === CharacterKind.Boss) return ENTITY_SIZE.CHARACTER_RADIUS * 1.6;
-    if (c.kind === CharacterKind.NPC) return ENTITY_SIZE.CHARACTER_RADIUS;
-    return ENTITY_SIZE.MONSTER_RADIUS;
-  }
-
-  private drawBody(g: Graphics, c: CharacterData, tint: number): void {
-    g.clear();
-    const r = this.radiusOf(c);
-    if (c.kind === CharacterKind.NPC) {
-      g.circle(0, 0, r).fill({ color: tint });
-      g.circle(0, -r * 0.2, r * 0.45).fill({ color: 0xffe0bd });
-      g.rect(-r * 0.5, r * 0.2, r, r * 0.7).fill({ color: tint });
-    } else {
-      g.poly([0, -r, r, r, -r, r]).fill({ color: tint });
-      g.circle(-r * 0.35, 0, r * 0.18).fill({ color: 0xff2020 });
-      g.circle(r * 0.35, 0, r * 0.18).fill({ color: 0xff2020 });
+  async preloadExternal(): Promise<void> {
+    if (!SPRITE_SETTINGS.useExternalImages) return;
+    const entries = Object.entries(SPRITE_SETTINGS.textures);
+    for (const [kind, url] of entries) {
+      if (!url) continue;
+      const tex = await Assets.load<Texture>(url);
+      this.externalTextures.set(kind, tex);
     }
   }
 
-  private drawBars(g: Graphics, c: CharacterData): void {
-    g.clear();
-    const r = this.radiusOf(c);
-    const w = BARS.WIDTH;
-    const h = BARS.HEIGHT;
-    const top = -r - h * 2 - BARS.GAP - 4;
-    const hpRatio = Math.max(0, c.attr.hp / c.attr.maxHp);
-    const mpRatio = Math.max(0, c.attr.mp / c.attr.maxMp);
-    g.rect(-w / 2, top, w, h).fill({ color: 0x331010 });
-    g.rect(-w / 2, top, w * hpRatio, h).fill({ color: 0xff3b3b });
-    const mpTop = top + h + BARS.GAP;
-    g.rect(-w / 2, mpTop, w, h).fill({ color: 0x101a33 });
-    g.rect(-w / 2, mpTop, w * mpRatio, h).fill({ color: 0x3b8bff });
-  }
-
-  private createVisual(c: CharacterData): CharVisual {
-    const wrap = new Container();
-    wrap.eventMode = 'static';
-    wrap.cursor = 'pointer';
-    const id = c.id;
-    wrap.on('pointertap', () => this.onClick(id));
-
-    const body = new Graphics();
-    this.drawBody(body, c, c.tint);
-    wrap.addChild(body);
-
-    const bars = new Graphics();
-    this.drawBars(bars, c);
-    wrap.addChild(bars);
-
-    const label = new Text({ text: '', style: NAME_STYLE });
-    label.anchor.set(0.5, 0);
-    label.y = this.radiusOf(c) + 4;
-    wrap.addChild(label);
-
-    this.container.addChild(wrap);
-    return { wrap, body, bars, label, lastTint: c.tint, lastState: c.state };
-  }
-
-  update(world: WorldState): void {
+  render(
+    state: GameState,
+    viewLeft: number,
+    viewTop: number,
+    viewRight: number,
+    viewBottom: number,
+  ): void {
     const seen = new Set<EntityId>();
-    for (const c of world.characters.values()) {
+    for (const c of state.characters.values()) {
+      if (
+        c.x < viewLeft - RENDER.CULL_PADDING ||
+        c.x > viewRight + RENDER.CULL_PADDING ||
+        c.y < viewTop - RENDER.CULL_PADDING ||
+        c.y > viewBottom + RENDER.CULL_PADDING
+      ) {
+        const hidden = this.views.get(c.id);
+        if (hidden) hidden.root.visible = false;
+        continue;
+      }
       seen.add(c.id);
-      let v = this.visuals.get(c.id);
-      if (!v) {
-        v = this.createVisual(c);
-        this.visuals.set(c.id, v);
-      }
-      v.wrap.x = c.position.x;
-      v.wrap.y = c.position.y;
-
-      const isDead = c.state === LifeState.Dead;
-      const targetTint = isDead ? applyGrayscale(c.tint) : c.tint;
-      if (v.lastTint !== targetTint || v.lastState !== c.state) {
-        this.drawBody(v.body, c, targetTint);
-        v.lastTint = targetTint;
-        v.lastState = c.state;
-      }
-
-      v.bars.visible = !isDead;
-      if (!isDead) {
-        this.drawBars(v.bars, c);
-        const bob = Math.sin(c.animPhase) * 2;
-        v.body.y = bob;
-      } else {
-        v.body.y = 0;
-      }
-
-      const healthMark = c.attr.health < 100 ? `❤${Math.round(c.attr.health)}` : '';
-      v.label.text = `${characterDisplayName(c)}\n${healthMark}`;
-      v.label.alpha = isDead ? 0.5 : 1;
+      const view = this.acquire(c);
+      this.updateView(view, c);
     }
-
-    for (const [id, v] of this.visuals) {
+    for (const [id, view] of this.views) {
       if (!seen.has(id)) {
-        v.wrap.destroy({ children: true });
-        this.visuals.delete(id);
+        view.root.visible = false;
+        if (!state.characters.has(id)) {
+          this.container.removeChild(view.root);
+          view.root.destroy({ children: true });
+          this.views.delete(id);
+        }
       }
     }
+  }
+
+  private acquire(c: Character): CharView {
+    const existing = this.views.get(c.id);
+    if (existing) return existing;
+    const root = new Container();
+    const icon = new Graphics();
+    const hpBar = new Graphics();
+    const mpBar = new Graphics();
+    const label = new Text({
+      text: '',
+      style: { fontSize: 10, fill: 0xffffff, align: 'center' },
+    });
+    label.anchor.set(0.5, 0);
+    root.addChild(icon);
+    root.addChild(hpBar);
+    root.addChild(mpBar);
+    root.addChild(label);
+    this.container.addChild(root);
+    const view: CharView = { root, icon, sprite: null, hpBar, mpBar, label, built: false };
+    this.views.set(c.id, view);
+    return view;
+  }
+
+  private buildIcon(view: CharView, c: Character): void {
+    const tex = this.externalTextures.get(c.kind);
+    if (SPRITE_SETTINGS.useExternalImages && tex) {
+      const sprite = new Sprite(tex);
+      sprite.anchor.set(0.5);
+      sprite.width = RENDER.ICON_RADIUS * 2;
+      sprite.height = RENDER.ICON_RADIUS * 2;
+      view.root.addChildAt(sprite, 0);
+      view.sprite = sprite;
+    } else {
+      view.icon.clear();
+      if (c.kind === 'boss') drawBossIcon(view.icon);
+      else if (c.kind === 'monster') drawMonsterIcon(view.icon, c);
+      else drawNpcIcon(view.icon, c);
+    }
+    view.built = true;
+  }
+
+  private updateView(view: CharView, c: Character): void {
+    view.root.visible = true;
+    view.root.position.set(c.x, c.y);
+    if (!view.built) this.buildIcon(view, c);
+
+    const wobble = c.alive ? Math.sin(c.animPhase) * 2 : 0;
+    view.icon.y = wobble;
+    if (view.sprite) view.sprite.y = wobble;
+
+    if (!c.alive) {
+      view.root.alpha = 0.5;
+      view.icon.tint = 0x808080;
+      if (view.sprite) view.sprite.tint = 0x808080;
+    } else {
+      view.root.alpha = 1;
+      view.icon.tint = 0xffffff;
+      if (view.sprite) view.sprite.tint = 0xffffff;
+    }
+
+    this.drawBars(view, c);
+    this.drawLabel(view, c);
+  }
+
+  private drawBars(view: CharView, c: Character): void {
+    const w = RENDER.BAR_WIDTH;
+    const h = RENDER.BAR_HEIGHT;
+    const top = -RENDER.ICON_RADIUS - 14;
+    view.hpBar.clear();
+    view.hpBar
+      .rect(-w / 2, top, w, h)
+      .fill({ color: BAR_BG })
+      .rect(-w / 2, top, w * (c.stats.hp / c.stats.hpMax), h)
+      .fill({ color: HP_COLOR });
+    view.mpBar.clear();
+    view.mpBar
+      .rect(-w / 2, top + h + 1, w, h)
+      .fill({ color: BAR_BG })
+      .rect(-w / 2, top + h + 1, w * (c.stats.mp / Math.max(1, c.stats.mpMax)), h)
+      .fill({ color: MP_COLOR });
+  }
+
+  private drawLabel(view: CharView, c: Character): void {
+    const healthPct = Math.round((c.stats.health / HEALTH.MAX) * 100);
+    if (c.kind === 'monster' || c.kind === 'boss') {
+      view.label.text = displayName(c);
+    } else {
+      view.label.text = `${displayName(c)}\n健康:${healthPct}%`;
+    }
+    view.label.position.set(0, RENDER.LABEL_OFFSET);
   }
 }

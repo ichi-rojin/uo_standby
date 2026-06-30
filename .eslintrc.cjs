@@ -1,26 +1,14 @@
-/* .eslintrc.cjs
- * 責務: TypeScript の静的解析ルールを定義する。
- */
+// ESLint設定: strict + any禁止 + 未使用禁止
 module.exports = {
   root: true,
-  env: {
-    browser: true,
-    es2020: true,
-  },
   parser: '@typescript-eslint/parser',
-  parserOptions: {
-    ecmaVersion: 2020,
-    sourceType: 'module',
-  },
+  parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
   plugins: ['@typescript-eslint'],
-  extends: [
-    'eslint:recommended',
-    'plugin:@typescript-eslint/recommended',
-  ],
+  extends: ['eslint:recommended', 'plugin:@typescript-eslint/recommended'],
   rules: {
     '@typescript-eslint/no-explicit-any': 'error',
-    '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+    '@typescript-eslint/no-unused-vars': 'error',
     'no-unused-vars': 'off',
   },
-  ignorePatterns: ['dist', 'node_modules', '.eslintrc.cjs'],
+  ignorePatterns: ['dist', 'node_modules', 'vite.config.ts'],
 };

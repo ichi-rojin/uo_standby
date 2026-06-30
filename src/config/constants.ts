@@ -1,93 +1,149 @@
-// src/config/constants.ts
-// 責務: ゲーム全体で参照する数値定数・寸法・チューニング値を一元管理する（マジックナンバー排除）。
-
+// 責務: ゲーム全体のマジックナンバーを集中管理する定数定義
 export const WORLD = {
   WIDTH: 8000,
   HEIGHT: 8000,
-  EDGE_MARGIN: 200,
+  MARGIN: 200,
 } as const;
 
 export const COUNTS = {
-  CITIES: 20,
-  SUPPLY_POSTS: 200,
-  NPCS: 500,
-  MONSTER_MIN: 200,
-  MONSTER_MAX: 1000,
+  CITIES: 40,
+  VILLAGES: 200,
+  BIOMES: 10,
+  NPC_MIN: 100,
+  NPC_MAX: 255,
+  MONSTER_MIN: 100,
+  MONSTER_MAX: 500,
+  BOSS: 8,
+  DUNGEON: 12,
 } as const;
 
 export const GRID = {
-  CELL_SIZE: 255,
-} as const;
-
-export const CAMERA = {
-  MIN_ZOOM: 0.05,
-  MAX_ZOOM: 3.0,
-  DEFAULT_ZOOM: 0.18,
-  ZOOM_STEP: 1.12,
-  PAN_SPEED: 900,
+  CELL_SIZE: 256,
 } as const;
 
 export const TIME = {
-  // ゲーム内の1日 = 実時間秒数（標準速度時）
-  REAL_SECONDS_PER_GAME_DAY: 24,
+  TICK_MS: 100,
+  GAME_SECONDS_PER_TICK: 3600,
   START_YEAR: 1000,
-  START_MONTH: 1,
-  START_DAY: 1,
-  START_HOUR: 6,
-  DAYS_PER_MONTH: 30,
-  MONTHS_PER_YEAR: 12,
-  HOURS_PER_DAY: 24,
 } as const;
 
 export const SPEED = {
-  PAUSED: 0,
+  PAUSE: 0,
   NORMAL: 1,
   FAST: 2,
 } as const;
 
-export const ENTITY_SIZE = {
-  CITY_RADIUS: 90,
-  SUPPLY_RADIUS: 40,
-  CHARACTER_RADIUS: 22,
-  MONSTER_RADIUS: 20,
+export const CAMERA = {
+  MIN_ZOOM: 0.08,
+  MAX_ZOOM: 4,
+  ZOOM_STEP: 1.1,
+  PAN_SPEED: 18,
 } as const;
 
-export const STATS = {
+export const STAT = {
+  MIN: 1,
+  MAX: 100,
+  CAPTURE_DIVISOR: 50,
+  XP_NORM_MAX: 10,
+} as const;
+
+export const COMBAT = {
+  RANGE_SWORD: 1,
+  RANGE_POLE: 2,
+  RANGE_BOW_MIN: 5,
+  RANGE_BOW_MAX: 20,
+  RANGE_MAGIC_MIN: 5,
+  RANGE_MAGIC_MAX: 20,
   BASE_HP: 100,
-  BASE_MP: 60,
-  BASE_HEALTH: 100,
-  HEALTH_DEBUFF_THRESHOLD: 60,
+  BASE_MP: 50,
+  ATTACK_COOLDOWN_TICKS: 3,
+  MP_COST_ATTACK: 8,
+  MP_COST_HEAL: 6,
+  MP_COST_BUFF: 5,
+  HEAL_FACTOR: 1.5,
 } as const;
 
-export const MOVEMENT = {
-  NPC_BASE_SPEED: 60,
-  MONSTER_BASE_SPEED: 45,
-  ARRIVE_RADIUS: 30,
-  IDLE_MAX_SECONDS: 6,
+export const NEED = {
+  MAX: 100,
+  DECAY_FOOD: 0.4,
+  DECAY_SLEEP: 0.3,
+  DECAY_LIBIDO: 0.2,
+  HUNGER_HEALTH_PENALTY: 0.5,
+  THRESHOLD_HIGH: 70,
+  THRESHOLD_LOW: 30,
 } as const;
 
-export const DEATH = {
-  GRAYSCALE_SECONDS: 12,
+export const HEALTH = {
+  MAX: 100,
+  DEBUFF_THRESHOLD: 60,
+  FORAGE_DAMAGE: 0.8,
 } as const;
 
-export const EFFECT = {
-  DAMAGE_TEXT_SECONDS: 1.2,
-  BUFF_RING_SECONDS: 1.0,
-  HIT_FLASH_SECONDS: 0.4,
+export const RECOVER = {
+  HP_PER_TICK: 4,
+  MP_PER_TICK: 3,
+  HEALTH_PER_TICK: 2,
 } as const;
 
-export const SPAWN = {
-  MONSTER_RESPAWN_BATCH: 25,
-  RESPAWN_INTERVAL_SECONDS: 1.5,
+export const MORAL = {
+  MIN: -10,
+  MAX: 10,
+  EVIL_THRESHOLD: -3,
+  KILL_THRESHOLD: -2,
+  SPARE_THRESHOLD: 4,
+} as const;
+
+export const RELATION = {
+  MIN: -100,
+  MAX: 100,
+  FRIEND: 40,
+  HATE: -40,
+  LOVE: 70,
+  RIVAL_LO: -10,
+  RIVAL_HI: 10,
+} as const;
+
+export const FLEE = {
+  HP_RATIO_BASE: 0.25,
+} as const;
+
+export const DEAD = {
+  GRAYSCALE_TICKS: 240,
+} as const;
+
+export const REPRO = {
+  LIBIDO_REQ: 60,
+  CHILD_MATURE_TICKS_YEARS: 10,
+  COOLDOWN_TICKS: 400,
+} as const;
+
+export const RENDER = {
+  ICON_RADIUS: 14,
+  BAR_WIDTH: 30,
+  BAR_HEIGHT: 4,
+  LABEL_OFFSET: 22,
+  EFFECT_LIFETIME: 14,
+  CITY_RADIUS: 26,
+  VILLAGE_RADIUS: 12,
+  BOSS_RADIUS: 30,
+  DUNGEON_RADIUS: 18,
+  CULL_PADDING: 100,
 } as const;
 
 export const LOG = {
-  MAX_EVENT_ENTRIES: 200,
-  MAX_CHAT_ENTRIES: 60,
+  MAX_EVENT: 60,
+  MAX_TALK: 14,
 } as const;
 
-export const BARS = {
-  WIDTH: 40,
-  HEIGHT: 5,
-  GAP: 2,
+export const AI = {
+  PERCEPTION_BASE: 220,
+  WANDER_RADIUS: 600,
+  RAID_CHANCE: 0.0006,
+  BANDIT_RECRUIT_RANGE: 300,
+  ESCAPE_CHANCE_CAPTIVE: 0.008,
+  NO_ACTION_LIMIT_TICKS: 30,
+} as const;
+
+export const FORT = {
+  DECAY_CHECK: true,
 } as const;

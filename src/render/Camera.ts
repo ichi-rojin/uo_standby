@@ -1,61 +1,75 @@
-// src/render/Camera.ts
-// 責務: ワールド座標→スクリーン座標変換のためのカメラ（中心位置・ズーム）を保持し、入力で操作する。
-
-import { CAMERA, WORLD } from '../config/constants';
+// 責務: カメラのズーム/パン制御とワールド座標変換、追従処理
+import { Container } from 'pixi.js';
 import { clamp } from '../util/math';
-import type { Vec2 } from '../domain/types';
+import { CAMERA, WORLD } from '../config/constants';
 
 export class Camera {
-  centerX: number;
-  centerY: number;
-  zoom: number;
-  private viewWidth: number;
-  private viewHeight: number;
+  zoom = 0.15;
+  x = WORLD.WIDTH / 2;
+  y = WORLD.HEIGHT / 2;
+  private followId: number | null = null;
 
-  constructor(viewWidth: number, viewHeight: number) {
-    this.centerX = WORLD.WIDTH / 2;
-    this.centerY = WORLD.HEIGHT / 2;
-    this.zoom = CAMERA.DEFAULT_ZOOM;
-    this.viewWidth = viewWidth;
-    this.viewHeight = viewHeight;
+  constructor(
+    private readonly world: Container,
+    private screenW: number,
+    private screenH: number,
+  ) {}
+
+  resize(w: number, h: number): void {
+    this.screenW = w;
+    this.screenH = h;
   }
 
-  setViewSize(w: number, h: number): void {
-    this.viewWidth = w;
-    this.viewHeight = h;
+  setFollow(id: number | null): void {
+    this.followId = id;
   }
 
-  pan(dxWorld: number, dyWorld: number): void {
-    this.centerX = clamp(this.centerX + dxWorld, 0, WORLD.WIDTH);
-    this.centerY = clamp(this.centerY + dyWorld, 0, WORLD.HEIGHT);
+  clearFollow(): void {
+    this.followId = null;
   }
 
-  zoomAt(screenX: number, screenY: number, factor: number): void {
-    const before = this.screenToWorld(screenX, screenY);
+  follow(x: number, y: number): void {
+    if (this.followId === null) return;
+    this.x = x;
+    this.y = y;
+  }
+
+  isFollowing(): boolean {
+    return this.followId !== null;
+  }
+
+  pan(dx: number, dy: number): void {
+    this.x = clamp(this.x + dx / this.zoom, 0, WORLD.WIDTH);
+    this.y = clamp(this.y + dy / this.zoom, 0, WORLD.HEIGHT);
+  }
+
+  zoomAt(factor: number): void {
     this.zoom = clamp(this.zoom * factor, CAMERA.MIN_ZOOM, CAMERA.MAX_ZOOM);
-    const after = this.screenToWorld(screenX, screenY);
-    this.centerX += before.x - after.x;
-    this.centerY += before.y - after.y;
-    this.centerX = clamp(this.centerX, 0, WORLD.WIDTH);
-    this.centerY = clamp(this.centerY, 0, WORLD.HEIGHT);
   }
 
-  worldToScreen(world: Vec2): Vec2 {
+  apply(): void {
+    this.world.scale.set(this.zoom);
+    this.world.position.set(
+      this.screenW / 2 - this.x * this.zoom,
+      this.screenH / 2 - this.y * this.zoom,
+    );
+  }
+
+  bounds(): { left: number; top: number; right: number; bottom: number } {
+    const halfW = this.screenW / 2 / this.zoom;
+    const halfH = this.screenH / 2 / this.zoom;
     return {
-      x: (world.x - this.centerX) * this.zoom + this.viewWidth / 2,
-      y: (world.y - this.centerY) * this.zoom + this.viewHeight / 2,
+      left: this.x - halfW,
+      top: this.y - halfH,
+      right: this.x + halfW,
+      bottom: this.y + halfH,
     };
   }
 
-  screenToWorld(sx: number, sy: number): Vec2 {
+  screenToWorld(sx: number, sy: number): { x: number; y: number } {
     return {
-      x: (sx - this.viewWidth / 2) / this.zoom + this.centerX,
-      y: (sy - this.viewHeight / 2) / this.zoom + this.centerY,
+      x: (sx - this.screenW / 2) / this.zoom + this.x,
+      y: (sy - this.screenH / 2) / this.zoom + this.y,
     };
-  }
-
-  focusOn(world: Vec2): void {
-    this.centerX = clamp(world.x, 0, WORLD.WIDTH);
-    this.centerY = clamp(world.y, 0, WORLD.HEIGHT);
   }
 }
